@@ -7,12 +7,35 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		513EA0FE603746920134DF46 /* ClaudeQuotaProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7084CB876967C3C1E694DCA /* ClaudeQuotaProviderTests.swift */; };
+		86E6BA1F03F74FDFD06F4C6B /* TerminalColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07D43647E0B98F24FB73209 /* TerminalColors.swift */; };
+		A0CB8D1D721AFBBAC06F6ACA /* CodexQuotaProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */; };
+		A2BD1073D65F01474DE76AF8 /* QuotaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC45FCA063FC2AD6608777C /* QuotaModels.swift */; };
+		C0FEC5DC0C766FE776BA9B66 /* QuotaModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */; };
+		D8BC809A3BD73D395E4494C6 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9F89FFF9B10D5C0DAEC1742E /* Foundation.framework */; };
 		FD0F42E72EE7ABA400980302 /* Mixpanel in Frameworks */ = {isa = PBXBuildFile; productRef = FD0F42E62EE7ABA400980302 /* Mixpanel */; };
 		FDA49F7D2EE11E3C00F9612E /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = FD33FD722EDF32D7002A6548 /* Markdown */; };
 		FDA49F7E2EE11E3C00F9612E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = FDA49F7F2EE11E3C00F9612E /* Sparkle */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		76CF3A2D822876D81746D326 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FD33FD552EDF32D7002A6548 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FD33FD5C2EDF32D7002A6548;
+			remoteInfo = ClaudeIsland;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexQuotaProviderTests.swift; sourceTree = "<group>"; };
+		6BC45FCA063FC2AD6608777C /* QuotaModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = QuotaModels.swift; path = SharedSources/QuotaModels.swift; sourceTree = "<group>"; };
+		9F89FFF9B10D5C0DAEC1742E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		A07D43647E0B98F24FB73209 /* TerminalColors.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TerminalColors.swift; path = SharedSources/TerminalColors.swift; sourceTree = "<group>"; };
+		B690939EBA5A1D600F7681B2 /* ClaudeIslandTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClaudeIslandTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuotaModelsTests.swift; sourceTree = "<group>"; };
+		F7084CB876967C3C1E694DCA /* ClaudeQuotaProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClaudeQuotaProviderTests.swift; sourceTree = "<group>"; };
 		FD33FD5D2EDF32D7002A6548 /* Claude Island.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Claude Island.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -38,6 +61,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B910A9383CCE6F030BDB3EA9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8BC809A3BD73D395E4494C6 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FD33FD5A2EDF32D7002A6548 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -51,11 +82,50 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0390B83E52C61712931C5F9C /* ClaudeIslandTests */ = {
+			isa = PBXGroup;
+			children = (
+				DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */,
+				F7084CB876967C3C1E694DCA /* ClaudeQuotaProviderTests.swift */,
+				440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */,
+				6716C2EF9A4739CBA132806B /* SharedSources */,
+			);
+			name = ClaudeIslandTests;
+			path = ClaudeIslandTests;
+			sourceTree = "<group>";
+		};
+		407EFA0C3E6000D763FCB7F4 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				9F89FFF9B10D5C0DAEC1742E /* Foundation.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		5F7BC550F8C3C489AC1B2875 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				407EFA0C3E6000D763FCB7F4 /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		6716C2EF9A4739CBA132806B /* SharedSources */ = {
+			isa = PBXGroup;
+			children = (
+				6BC45FCA063FC2AD6608777C /* QuotaModels.swift */,
+				A07D43647E0B98F24FB73209 /* TerminalColors.swift */,
+			);
+			name = SharedSources;
+			sourceTree = "<group>";
+		};
 		FD33FD542EDF32D7002A6548 = {
 			isa = PBXGroup;
 			children = (
 				FD33FD5F2EDF32D7002A6548 /* ClaudeIsland */,
 				FD33FD5E2EDF32D7002A6548 /* Products */,
+				5F7BC550F8C3C489AC1B2875 /* Frameworks */,
+				0390B83E52C61712931C5F9C /* ClaudeIslandTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -63,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				FD33FD5D2EDF32D7002A6548 /* Claude Island.app */,
+				B690939EBA5A1D600F7681B2 /* ClaudeIslandTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +141,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B0098F44F040D399FCC21871 /* ClaudeIslandTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F2A5FABCD4492D23B277084F /* Build configuration list for PBXNativeTarget "ClaudeIslandTests" */;
+			buildPhases = (
+				8ACDFA40D19E4A20B29B127A /* Sources */,
+				B910A9383CCE6F030BDB3EA9 /* Frameworks */,
+				529A675AB899D1E2D833BA2C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				28C4156FB0C32A6A2D32348C /* PBXTargetDependency */,
+			);
+			name = ClaudeIslandTests;
+			productName = ClaudeIslandTests;
+			productReference = B690939EBA5A1D600F7681B2 /* ClaudeIslandTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		FD33FD5C2EDF32D7002A6548 /* ClaudeIsland */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FD33FD682EDF32D8002A6548 /* Build configuration list for PBXNativeTarget "ClaudeIsland" */;
@@ -130,11 +219,19 @@
 			projectRoot = "";
 			targets = (
 				FD33FD5C2EDF32D7002A6548 /* ClaudeIsland */,
+				B0098F44F040D399FCC21871 /* ClaudeIslandTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		529A675AB899D1E2D833BA2C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FD33FD5B2EDF32D7002A6548 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -145,6 +242,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		8ACDFA40D19E4A20B29B127A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0FEC5DC0C766FE776BA9B66 /* QuotaModelsTests.swift in Sources */,
+				513EA0FE603746920134DF46 /* ClaudeQuotaProviderTests.swift in Sources */,
+				A0CB8D1D721AFBBAC06F6ACA /* CodexQuotaProviderTests.swift in Sources */,
+				A2BD1073D65F01474DE76AF8 /* QuotaModels.swift in Sources */,
+				86E6BA1F03F74FDFD06F4C6B /* TerminalColors.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FD33FD592EDF32D7002A6548 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -154,7 +263,54 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		28C4156FB0C32A6A2D32348C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = ClaudeIsland;
+			target = FD33FD5C2EDF32D7002A6548 /* ClaudeIsland */;
+			targetProxy = 76CF3A2D822876D81746D326 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		064A19A91EEF25BAA31DAFDF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "-";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRESERVE_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.farouqaldori.ClaudeIslandTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = ClaudeIsland;
+			};
+			name = Debug;
+		};
+		FCF59B2E1D88955CEC3B1D43 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "-";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				PRESERVE_PATHS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.farouqaldori.ClaudeIslandTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = ClaudeIsland;
+			};
+			name = Release;
+		};
 		FD33FD662EDF32D8002A6548 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -280,7 +436,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = ClaudeIsland/Resources/ClaudeIsland.entitlements;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 6;
@@ -319,7 +478,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = ClaudeIsland/Resources/ClaudeIsland.entitlements;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 6;
@@ -356,6 +518,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		F2A5FABCD4492D23B277084F /* Build configuration list for PBXNativeTarget "ClaudeIslandTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FCF59B2E1D88955CEC3B1D43 /* Release */,
+				064A19A91EEF25BAA31DAFDF /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		FD33FD582EDF32D7002A6548 /* Build configuration list for PBXProject "ClaudeIsland" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

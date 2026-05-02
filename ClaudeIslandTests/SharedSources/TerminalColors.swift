@@ -1,0 +1,1 @@
+/Users/weijie.lai/Projects/workspace/vibe-notch-codex/ClaudeIsland/UI/Components/TerminalColors.swift

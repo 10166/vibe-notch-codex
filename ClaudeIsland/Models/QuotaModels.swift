@@ -10,13 +10,13 @@ import SwiftUI
 
 // MARK: - Provider
 
-nonisolated enum QuotaProvider: String, CaseIterable, Identifiable, Sendable {
+public nonisolated enum QuotaProvider: String, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .claude: return "Claude Code"
         case .codex: return "Codex CLI"
@@ -26,35 +26,53 @@ nonisolated enum QuotaProvider: String, CaseIterable, Identifiable, Sendable {
 
 // MARK: - Rate Window
 
-nonisolated struct QuotaRateWindow: Equatable, Sendable {
-    var usedPercent: Double
-    var windowMinutes: Int?
-    var resetsAt: Date?
-    var resetDescription: String?
+public nonisolated struct QuotaRateWindow: Equatable, Sendable {
+    public var usedPercent: Double
+    public var windowMinutes: Int?
+    public var resetsAt: Date?
+    public var resetDescription: String?
 
-    var remainingPercent: Double {
+    public init(usedPercent: Double, windowMinutes: Int? = nil, resetsAt: Date? = nil, resetDescription: String? = nil) {
+        self.usedPercent = usedPercent
+        self.windowMinutes = windowMinutes
+        self.resetsAt = resetsAt
+        self.resetDescription = resetDescription
+    }
+
+    public var remainingPercent: Double {
         max(0, 100 - usedPercent)
     }
 }
 
 // MARK: - Provider Identity
 
-nonisolated struct QuotaProviderIdentity: Equatable, Sendable {
-    var email: String?
-    var plan: String?
+public nonisolated struct QuotaProviderIdentity: Equatable, Sendable {
+    public var email: String?
+    public var plan: String?
+
+    public init(email: String? = nil, plan: String? = nil) {
+        self.email = email
+        self.plan = plan
+    }
 }
 
 // MARK: - Credits Snapshot
 
-nonisolated struct QuotaCreditsSnapshot: Equatable, Sendable {
-    var hasCredits: Bool
-    var unlimited: Bool
-    var balance: Double?
+public nonisolated struct QuotaCreditsSnapshot: Equatable, Sendable {
+    public var hasCredits: Bool
+    public var unlimited: Bool
+    public var balance: Double?
+
+    public init(hasCredits: Bool, unlimited: Bool, balance: Double? = nil) {
+        self.hasCredits = hasCredits
+        self.unlimited = unlimited
+        self.balance = balance
+    }
 }
 
 // MARK: - Errors
 
-nonisolated enum QuotaError: Equatable, Sendable {
+public nonisolated enum QuotaError: Equatable, Sendable {
     case noCredentials
     case networkError(String)
     case unauthorized
@@ -64,24 +82,34 @@ nonisolated enum QuotaError: Equatable, Sendable {
 
 // MARK: - Per-Provider Snapshot
 
-nonisolated struct QuotaProviderSnapshot: Equatable, Sendable {
-    var provider: QuotaProvider
-    var primary: QuotaRateWindow?
-    var secondary: QuotaRateWindow?
-    var credits: QuotaCreditsSnapshot?
-    var identity: QuotaProviderIdentity?
-    var error: QuotaError?
-    var updatedAt: Date
+public nonisolated struct QuotaProviderSnapshot: Equatable, Sendable {
+    public var provider: QuotaProvider
+    public var primary: QuotaRateWindow?
+    public var secondary: QuotaRateWindow?
+    public var credits: QuotaCreditsSnapshot?
+    public var identity: QuotaProviderIdentity?
+    public var error: QuotaError?
+    public var updatedAt: Date
+
+    public init(provider: QuotaProvider, primary: QuotaRateWindow? = nil, secondary: QuotaRateWindow? = nil, credits: QuotaCreditsSnapshot? = nil, identity: QuotaProviderIdentity? = nil, error: QuotaError? = nil, updatedAt: Date) {
+        self.provider = provider
+        self.primary = primary
+        self.secondary = secondary
+        self.credits = credits
+        self.identity = identity
+        self.error = error
+        self.updatedAt = updatedAt
+    }
 }
 
 // MARK: - Aggregate Snapshot
 
-nonisolated struct QuotaSnapshot: Equatable, Sendable {
-    var providers: [QuotaProvider: QuotaProviderSnapshot]
-    var isRefreshing: Bool
-    var lastUpdatedAt: Date?
+public nonisolated struct QuotaSnapshot: Equatable, Sendable {
+    public var providers: [QuotaProvider: QuotaProviderSnapshot]
+    public var isRefreshing: Bool
+    public var lastUpdatedAt: Date?
 
-    static let empty = QuotaSnapshot(
+    public static let empty = QuotaSnapshot(
         providers: [:],
         isRefreshing: false,
         lastUpdatedAt: nil
@@ -90,12 +118,12 @@ nonisolated struct QuotaSnapshot: Equatable, Sendable {
 
 // MARK: - Formatters
 
-nonisolated enum QuotaFormatters {
-    static func usagePercent(_ window: QuotaRateWindow) -> String {
+public nonisolated enum QuotaFormatters {
+    public static func usagePercent(_ window: QuotaRateWindow) -> String {
         String(format: "%.0f%%", window.remainingPercent)
     }
 
-    static func resetCountdown(from date: Date, now: Date) -> String {
+    public static func resetCountdown(from date: Date, now: Date) -> String {
         let interval = date.timeIntervalSince(now)
         guard interval > 0 else { return "now" }
 
@@ -114,7 +142,7 @@ nonisolated enum QuotaFormatters {
         }
     }
 
-    static func colorForUsage(_ percent: Double) -> Color {
+    public static func colorForUsage(_ percent: Double) -> Color {
         if percent < 50 {
             return TerminalColors.green
         } else if percent <= 80 {
@@ -124,7 +152,7 @@ nonisolated enum QuotaFormatters {
         }
     }
 
-    static func windowLabel(_ window: QuotaRateWindow) -> String {
+    public static func windowLabel(_ window: QuotaRateWindow) -> String {
         guard let minutes = window.windowMinutes else {
             return "Usage"
         }
