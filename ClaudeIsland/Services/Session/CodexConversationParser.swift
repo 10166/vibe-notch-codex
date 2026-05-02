@@ -286,16 +286,16 @@ actor CodexConversationParser {
         if payloadType == "message" {
             guard let roleString = payload["role"] as? String,
                   let role = chatRole(from: roleString),
-                  let text = textContent(from: payload),
-                  !shouldSkipText(text) else {
+                  let blocks = messageBlocks(from: payload) else {
                 return nil
             }
+            let text = plainText(from: blocks)
 
             return ParsedCodexMessage(
                 id: stableId(prefix: "codex-message", json: json),
                 role: role,
                 timestamp: timestamp,
-                blocks: [.text(text)],
+                blocks: blocks,
                 text: text,
                 tool: nil
             )
@@ -396,18 +396,50 @@ actor CodexConversationParser {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    private static func textContent(from payload: [String: Any]) -> String? {
+    private static func messageBlocks(from payload: [String: Any]) -> [MessageBlock]? {
         guard let content = payload["content"] as? [[String: Any]] else { return nil }
 
-        let parts = content.compactMap { block -> String? in
-            guard let type = block["type"] as? String,
-                  type == "input_text" || type == "output_text" else {
-                return nil
+        var blocks: [MessageBlock] = []
+        var hasImageMarker = false
+
+        for block in content {
+            guard let type = block["type"] as? String else { continue }
+
+            if type == "input_text" || type == "output_text" {
+                guard let text = block["text"] as? String else { continue }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !shouldSkipText(trimmed) else { continue }
+
+                if let meta = MetaMessageParser.parse(trimmed) {
+                    if meta.kind == .image {
+                        guard !hasImageMarker else { continue }
+                        hasImageMarker = true
+                    }
+                    blocks.append(.meta(meta))
+                } else {
+                    blocks.append(.text(trimmed))
+                }
+            } else if type == "input_image", !hasImageMarker {
+                hasImageMarker = true
+                blocks.append(.meta(MetaMessageBlock(
+                    kind: .image,
+                    title: "Image",
+                    subtitle: "Attached image",
+                    detail: nil
+                )))
             }
-            return block["text"] as? String
         }
 
-        let text = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return blocks.isEmpty ? nil : blocks
+    }
+
+    private static func plainText(from blocks: [MessageBlock]) -> String? {
+        let text = blocks.compactMap { block -> String? in
+            if case .text(let text) = block {
+                return text
+            }
+            return nil
+        }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }
 

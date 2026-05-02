@@ -546,9 +546,95 @@ struct MessageItemView: View {
             ThinkingView(text: text)
         case .image(let block):
             ImageMessageView(image: block)
+        case .meta(let meta):
+            MetaMessageView(meta: meta)
         case .interrupted:
             InterruptedMessageView()
         }
+    }
+}
+
+// MARK: - Meta Message
+
+struct MetaMessageView: View {
+    let meta: MetaMessageBlock
+
+    private var accentColor: Color {
+        switch meta.kind {
+        case .command:
+            return Color(red: 0.30, green: 0.70, blue: 0.95)
+        case .image:
+            return Color(red: 0.68, green: 0.52, blue: 0.96)
+        case .skill:
+            return Color(red: 0.38, green: 0.85, blue: 0.62)
+        case .taskNotification:
+            return Color(red: 0.95, green: 0.72, blue: 0.36)
+        case .teammate:
+            return Color(red: 0.46, green: 0.78, blue: 0.92)
+        case .localCommand:
+            return Color(red: 0.70, green: 0.76, blue: 0.84)
+        case .systemNotice:
+            return Color(red: 0.95, green: 0.76, blue: 0.40)
+        case .toolError:
+            return Color(red: 0.95, green: 0.42, blue: 0.42)
+        }
+    }
+
+    private var iconName: String {
+        switch meta.kind {
+        case .command, .localCommand:
+            return "terminal"
+        case .image:
+            return "photo"
+        case .skill:
+            return "sparkles"
+        case .taskNotification:
+            return "checklist"
+        case .teammate:
+            return "person.2"
+        case .systemNotice:
+            return "exclamationmark.triangle"
+        case .toolError:
+            return "xmark.octagon"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: iconName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(accentColor)
+                .frame(width: 16, height: 16)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meta.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.84))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let subtitle = meta.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.48))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: 24)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(accentColor.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(accentColor.opacity(0.22), lineWidth: 1)
+                )
+        )
     }
 }
 

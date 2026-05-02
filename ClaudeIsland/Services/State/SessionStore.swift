@@ -629,7 +629,7 @@ actor SessionStore {
                     switch block {
                     case .toolUse(let tool):
                         validIds.insert(tool.id)
-                    case .text, .thinking, .image, .interrupted:
+                    case .text, .thinking, .image, .meta, .interrupted:
                         let itemId = "\(message.id)-\(block.typePrefix)-\(blockIndex)"
                         validIds.insert(itemId)
                     }
@@ -909,6 +909,11 @@ actor SessionStore {
             let itemId = "\(message.id)-image-\(blockIndex)"
             guard !existingIds.contains(itemId) else { return nil }
             return ChatHistoryItem(id: itemId, type: .image(imageBlock), timestamp: message.timestamp)
+
+        case .meta(let metaBlock):
+            let itemId = "\(message.id)-meta-\(blockIndex)"
+            guard !existingIds.contains(itemId) else { return nil }
+            return ChatHistoryItem(id: itemId, type: .meta(metaBlock), timestamp: message.timestamp)
 
         case .interrupted:
             let itemId = "\(message.id)-interrupted-\(blockIndex)"

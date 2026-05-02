@@ -620,8 +620,12 @@ struct GenericResultContent: View {
 struct GenericTextContent: View {
     let text: String
 
+    private var displayText: String {
+        MetaMessageParser.readableText(text)
+    }
+
     var body: some View {
-        Text(text)
+        Text(displayText)
             .font(.system(size: 11, design: .monospaced))
             .foregroundColor(.white.opacity(0.5))
             .lineLimit(15)

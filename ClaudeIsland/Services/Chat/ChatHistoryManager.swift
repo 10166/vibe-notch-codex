@@ -124,6 +124,7 @@ enum ChatHistoryItemType: Equatable, Sendable {
     case toolCall(ToolCallItem)
     case thinking(String)
     case image(ImageBlock)
+    case meta(MetaMessageBlock)
     case interrupted
 }
 

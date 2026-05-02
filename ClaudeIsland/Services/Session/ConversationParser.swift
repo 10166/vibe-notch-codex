@@ -171,7 +171,7 @@ actor ConversationParser {
             if type == "user" && !isMeta {
                 if let message = json["message"] as? [String: Any],
                    let msgContent = message["content"] as? String {
-                    if !msgContent.hasPrefix("<command-name>") && !msgContent.hasPrefix("<local-command") && !msgContent.hasPrefix("Caveat:") {
+                    if !Self.shouldSkipDisplayText(msgContent) {
                         firstUserMessage = Self.truncateMessage(msgContent, maxLength: 50)
                         break
                     }
@@ -193,7 +193,7 @@ actor ConversationParser {
                     let isMeta = json["isMeta"] as? Bool ?? false
                     if !isMeta, let message = json["message"] as? [String: Any] {
                         if let msgContent = message["content"] as? String {
-                            if !msgContent.hasPrefix("<command-name>") && !msgContent.hasPrefix("<local-command") && !msgContent.hasPrefix("Caveat:") {
+                            if !Self.shouldSkipDisplayText(msgContent) {
                                 lastMessage = msgContent
                                 lastMessageRole = type
                             }
@@ -208,7 +208,7 @@ actor ConversationParser {
                                     lastToolName = toolName
                                     break
                                 } else if blockType == "text", let text = block["text"] as? String {
-                                    if !text.hasPrefix("[Request interrupted by user") {
+                                    if !text.hasPrefix("[Request interrupted by user") && !Self.shouldSkipDisplayText(text) {
                                         lastMessage = text
                                         lastMessageRole = type
                                         break
@@ -307,6 +307,13 @@ actor ConversationParser {
             return String(cleaned.prefix(maxLength - 3)) + "..."
         }
         return cleaned
+    }
+
+    private static func shouldSkipDisplayText(_ text: String) -> Bool {
+        text.hasPrefix("<command-name>") ||
+        text.hasPrefix("<local-command-caveat") ||
+        text.hasPrefix("Caveat:") ||
+        MetaMessageParser.parse(text) != nil
     }
 
     // MARK: - Full Conversation Parsing
@@ -563,10 +570,11 @@ actor ConversationParser {
         var blocks: [MessageBlock] = []
 
         if let content = messageDict["content"] as? String {
-            if content.hasPrefix("<command-name>") || content.hasPrefix("<local-command") || content.hasPrefix("Caveat:") {
+            if let meta = MetaMessageParser.parse(content) {
+                blocks.append(.meta(meta))
+            } else if content.hasPrefix("<local-command-caveat") || content.hasPrefix("Caveat:") {
                 return nil
-            }
-            if content.hasPrefix("[Request interrupted by user") {
+            } else if content.hasPrefix("[Request interrupted by user") {
                 blocks.append(.interrupted)
             } else {
                 blocks.append(.text(content))
@@ -577,7 +585,11 @@ actor ConversationParser {
                     switch blockType {
                     case "text":
                         if let text = block["text"] as? String {
-                            if text.hasPrefix("[Request interrupted by user") {
+                            if let meta = MetaMessageParser.parse(text) {
+                                blocks.append(.meta(meta))
+                            } else if text.hasPrefix("<local-command-caveat") || text.hasPrefix("Caveat:") {
+                                continue
+                            } else if text.hasPrefix("[Request interrupted by user") {
                                 blocks.append(.interrupted)
                             } else {
                                 blocks.append(.text(text))
