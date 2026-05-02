@@ -11,6 +11,7 @@ import sys
 
 SOCKET_PATH = "/tmp/claude-island.sock"
 TIMEOUT_SECONDS = 300
+CONTROL_CODEX_PERMISSIONS = os.environ.get("VIBE_NOTCH_CODEX_PERMISSION_CONTROL") == "1"
 
 
 def get_tty():
@@ -38,14 +39,17 @@ def get_tty():
     return None
 
 
-def send_event(state):
+def send_event(state, wait_for_response=None):
+    if wait_for_response is None:
+        wait_for_response = state.get("status") == "waiting_for_approval"
+
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(TIMEOUT_SECONDS)
         sock.connect(SOCKET_PATH)
         sock.sendall(json.dumps(state).encode())
 
-        if state.get("status") == "waiting_for_approval":
+        if wait_for_response:
             response = sock.recv(4096)
             sock.close()
             if response:
@@ -90,13 +94,13 @@ def main():
             state["tool_use_id"] = data.get("tool_use_id")
 
     elif event == "PermissionRequest":
-        state["status"] = "waiting_for_approval"
+        state["status"] = "waiting_for_approval" if CONTROL_CODEX_PERMISSIONS else "processing"
         state["tool"] = data.get("tool_name")
         state["tool_input"] = tool_input
         if data.get("tool_use_id"):
             state["tool_use_id"] = data.get("tool_use_id")
 
-        response = send_event(state)
+        response = send_event(state, wait_for_response=CONTROL_CODEX_PERMISSIONS)
         if response:
             decision = response.get("decision", "ask")
             reason = response.get("reason", "")
