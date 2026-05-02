@@ -55,6 +55,13 @@ struct NotchMenuView: View {
                     viewModel.showUsage()
                 }
 
+                MenuRow(
+                    icon: "gauge.with.dots.needle.bottom.50percent",
+                    label: "API Quota"
+                ) {
+                    viewModel.showQuota()
+                }
+
                 Divider()
                     .background(Color.white.opacity(0.08))
                     .padding(.vertical, 4)

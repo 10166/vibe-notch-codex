@@ -374,6 +374,8 @@ struct NotchView: View {
                 NotchMenuView(viewModel: viewModel)
             case .usage:
                 UsageHeatmapView(viewModel: viewModel)
+            case .quota:
+                QuotaDashboardView(viewModel: viewModel)
             case .chat(let session):
                 ChatView(
                     sessionId: session.sessionId,

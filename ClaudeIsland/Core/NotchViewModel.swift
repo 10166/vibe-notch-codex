@@ -27,6 +27,7 @@ enum NotchContentType: Equatable {
     case instances
     case menu
     case usage
+    case quota
     case chat(SessionState)
 
     var id: String {
@@ -34,6 +35,7 @@ enum NotchContentType: Equatable {
         case .instances: return "instances"
         case .menu: return "menu"
         case .usage: return "usage"
+        case .quota: return "quota"
         case .chat(let session): return "chat-\(session.sessionId)"
         }
     }
@@ -88,6 +90,11 @@ class NotchViewModel: ObservableObject {
             return CGSize(
                 width: min(screenRect.width * 0.82, 840),
                 height: 520
+            )
+        case .quota:
+            return CGSize(
+                width: min(screenRect.width * 0.4, 480),
+                height: 420
             )
         case .instances:
             return CGSize(
@@ -294,6 +301,11 @@ class NotchViewModel: ObservableObject {
     func showUsage() {
         currentChatSession = nil
         contentType = .usage
+    }
+
+    func showQuota() {
+        currentChatSession = nil
+        contentType = .quota
     }
 
     func showChat(for session: SessionState) {
