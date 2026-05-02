@@ -173,7 +173,7 @@ enum SessionPhase: Sendable {
     }
 
     /// Whether this is a waitingForApproval phase
-    var isWaitingForApproval: Bool {
+    nonisolated var isWaitingForApproval: Bool {
         if case .waitingForApproval = self {
             return true
         }

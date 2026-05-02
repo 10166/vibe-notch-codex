@@ -19,6 +19,7 @@ actor CodexConversationParser {
         var lastFileOffset: UInt64 = 0
         var messages: [ChatMessage] = []
         var seenToolIds: Set<String> = []
+        var toolIdToName: [String: String] = [:]
         var completedToolIds: Set<String> = []
         var toolResults: [String: ConversationParser.ToolResult] = [:]
         var structuredResults: [String: ToolResultData] = [:]
@@ -148,7 +149,25 @@ actor CodexConversationParser {
         for line in newContent.components(separatedBy: "\n") where !line.isEmpty {
             guard let json = Self.parseJSON(line) else { continue }
 
+            if let output = Self.parseExecCommandEnd(json) {
+                state.completedToolIds.insert(output.id)
+                state.toolResults[output.id] = ConversationParser.ToolResult(
+                    content: output.content,
+                    stdout: nil,
+                    stderr: nil,
+                    isError: output.isError
+                )
+                state.structuredResults[output.id] = .generic(GenericResult(
+                    rawContent: output.content,
+                    rawData: ["content": output.content, "isError": output.isError]
+                ))
+                continue
+            }
+
             if let output = Self.parseFunctionOutput(json) {
+                if state.toolIdToName[output.id] == "exec_command" {
+                    continue
+                }
                 state.completedToolIds.insert(output.id)
                 state.toolResults[output.id] = ConversationParser.ToolResult(
                     content: output.content,
@@ -166,6 +185,7 @@ actor CodexConversationParser {
             guard let codexMessage = Self.parseCodexMessage(json) else { continue }
 
             if let tool = codexMessage.tool {
+                state.toolIdToName[tool.id] = tool.name
                 if state.seenToolIds.contains(tool.id) {
                     continue
                 }
@@ -201,6 +221,27 @@ actor CodexConversationParser {
         let isError: Bool
     }
 
+    private static func parseExecCommandEnd(_ json: [String: Any]) -> ParsedFunctionOutput? {
+        guard json["type"] as? String == "event_msg",
+              let payload = json["payload"] as? [String: Any],
+              payload["type"] as? String == "exec_command_end",
+              let callId = payload["call_id"] as? String else {
+            return nil
+        }
+
+        let content = payload["aggregated_output"] as? String ??
+            payload["stdout"] as? String ??
+            payload["stderr"] as? String ??
+            ""
+        let status = payload["status"] as? String
+        let exitCode = payload["exit_code"] as? Int
+        return ParsedFunctionOutput(
+            id: callId,
+            content: content,
+            isError: status == "failed" || (exitCode != nil && exitCode != 0)
+        )
+    }
+
     private static func parseCodexMessage(_ json: [String: Any]) -> ParsedCodexMessage? {
         guard json["type"] as? String == "response_item",
               let payload = json["payload"] as? [String: Any],
@@ -232,10 +273,11 @@ actor CodexConversationParser {
             guard let callId = payload["call_id"] as? String else { return nil }
             let name = payload["name"] as? String ?? "tool"
             let arguments = payload["arguments"] as? String ?? ""
+            let input = parseArguments(arguments)
             let tool = ToolUseBlock(
                 id: callId,
                 name: name,
-                input: arguments.isEmpty ? [:] : ["arguments": arguments]
+                input: input
             )
 
             return ParsedCodexMessage(
@@ -249,6 +291,38 @@ actor CodexConversationParser {
         }
 
         return nil
+    }
+
+    private static func parseArguments(_ arguments: String) -> [String: String] {
+        guard !arguments.isEmpty,
+              let data = arguments.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return arguments.isEmpty ? [:] : ["arguments": arguments]
+        }
+
+        var input: [String: String] = [:]
+        for (key, value) in object {
+            input[key] = stringifyArgumentValue(value)
+        }
+        return input
+    }
+
+    private static func stringifyArgumentValue(_ value: Any) -> String {
+        if let string = value as? String {
+            return string
+        }
+        if let bool = value as? Bool {
+            return bool ? "true" : "false"
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        if JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+           let string = String(data: data, encoding: .utf8) {
+            return string
+        }
+        return String(describing: value)
     }
 
     private static func parseFunctionOutput(_ json: [String: Any]) -> ParsedFunctionOutput? {

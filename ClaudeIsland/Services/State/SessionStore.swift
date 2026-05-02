@@ -211,9 +211,11 @@ actor SessionStore {
         session.lastActivity = snapshot.updatedAt
         session.conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
 
-        let newPhase: SessionPhase = snapshot.isProcessing ? .processing : .waitingForInput
-        if session.phase.canTransition(to: newPhase) {
-            session.phase = newPhase
+        if !session.phase.isWaitingForApproval {
+            let newPhase: SessionPhase = snapshot.isProcessing ? .processing : .waitingForInput
+            if session.phase.canTransition(to: newPhase) {
+                session.phase = newPhase
+            }
         }
 
         sessions[snapshot.sessionId] = session
@@ -460,8 +462,11 @@ actor SessionStore {
         if let existingItem = session.chatItems.first(where: { $0.id == toolUseId }),
            case .toolCall(let tool) = existingItem.type,
            tool.status == .success || tool.status == .error || tool.status == .interrupted {
-            // Already completed, skip
-            return
+            let hasExistingResult = tool.result != nil || tool.structuredResult != nil
+            let hasNewResult = result.result != nil || result.structuredResult != nil
+            if hasExistingResult || !hasNewResult {
+                return
+            }
         }
 
         // Update the tool status
@@ -1083,7 +1088,11 @@ actor SessionStore {
                 await self?.process(.clearDetected(sessionId: sessionId))
             }
 
-            guard !result.newMessages.isEmpty || result.clearDetected else {
+            let hasToolUpdates = !result.completedToolIds.isEmpty ||
+                !result.toolResults.isEmpty ||
+                !result.structuredResults.isEmpty
+
+            guard !result.newMessages.isEmpty || result.clearDetected || hasToolUpdates else {
                 return
             }
 
