@@ -86,6 +86,16 @@ struct UsageHeatmapView: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.plain)
+
+            Button {
+                viewModel.showQuota()
+            } label: {
+                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.45))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
         }
     }
 
