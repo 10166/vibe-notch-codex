@@ -47,6 +47,18 @@ struct NotchMenuView: View {
                     .background(Color.white.opacity(0.08))
                     .padding(.vertical, 4)
 
+                // Usage
+                MenuRow(
+                    icon: "chart.bar.xaxis",
+                    label: "Usage"
+                ) {
+                    viewModel.showUsage()
+                }
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                    .padding(.vertical, 4)
+
                 // System settings
                 MenuToggleRow(
                     icon: "power",

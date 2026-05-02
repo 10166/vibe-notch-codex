@@ -107,6 +107,14 @@ struct NotchView: View {
         }
     }
 
+    private var openedHorizontalPadding: CGFloat {
+        cornerRadiusInsets.opened.top + 12
+    }
+
+    private var openedContentWidth: CGFloat {
+        max(0, notchSize.width - openedHorizontalPadding * 2)
+    }
+
     /// Width of the closed content (notch + any expansion)
     private var closedContentWidth: CGFloat {
         closedNotchSize.width + expansionWidth
@@ -234,7 +242,7 @@ struct NotchView: View {
             // Main content only when opened
             if viewModel.status == .opened {
                 contentView
-                    .frame(width: notchSize.width - 24) // Fixed width to prevent reflow
+                    .frame(width: openedContentWidth) // Fixed width to prevent reflow
                     .transition(
                         .asymmetric(
                             insertion: .scale(scale: 0.8, anchor: .top)
@@ -364,6 +372,8 @@ struct NotchView: View {
                 )
             case .menu:
                 NotchMenuView(viewModel: viewModel)
+            case .usage:
+                UsageHeatmapView(viewModel: viewModel)
             case .chat(let session):
                 ChatView(
                     sessionId: session.sessionId,
@@ -379,7 +389,7 @@ struct NotchView: View {
                 .id(session.sessionId)
             }
         }
-        .frame(width: notchSize.width - 24) // Fixed width to prevent text reflow
+        .frame(width: openedContentWidth) // Fixed width to prevent text reflow
     }
 
     // MARK: - Event Handlers
