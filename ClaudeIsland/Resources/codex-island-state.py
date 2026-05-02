@@ -11,7 +11,6 @@ import sys
 
 SOCKET_PATH = "/tmp/claude-island.sock"
 TIMEOUT_SECONDS = 300
-CONTROL_CODEX_PERMISSIONS = os.environ.get("VIBE_NOTCH_CODEX_PERMISSION_CONTROL") == "1"
 
 
 def get_tty():
@@ -39,23 +38,13 @@ def get_tty():
     return None
 
 
-def send_event(state, wait_for_response=None):
-    if wait_for_response is None:
-        wait_for_response = state.get("status") == "waiting_for_approval"
-
+def send_event(state):
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(TIMEOUT_SECONDS)
         sock.connect(SOCKET_PATH)
         sock.sendall(json.dumps(state).encode())
-
-        if wait_for_response:
-            response = sock.recv(4096)
-            sock.close()
-            if response:
-                return json.loads(response.decode())
-        else:
-            sock.close()
+        sock.close()
     except (socket.error, OSError, json.JSONDecodeError):
         return None
     return None
@@ -94,35 +83,15 @@ def main():
             state["tool_use_id"] = data.get("tool_use_id")
 
     elif event == "PermissionRequest":
-        state["status"] = "waiting_for_approval" if CONTROL_CODEX_PERMISSIONS else "processing"
+        # Codex owns its native approval prompt. Notify the app without
+        # blocking the hook, otherwise Codex cannot show its own approve UI.
+        state["status"] = "processing"
         state["tool"] = data.get("tool_name")
         state["tool_input"] = tool_input
         if data.get("tool_use_id"):
             state["tool_use_id"] = data.get("tool_use_id")
 
-        response = send_event(state, wait_for_response=CONTROL_CODEX_PERMISSIONS)
-        if response:
-            decision = response.get("decision", "ask")
-            reason = response.get("reason", "")
-            if decision == "allow":
-                print(json.dumps({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PermissionRequest",
-                        "decision": {"behavior": "allow"},
-                    }
-                }))
-                sys.exit(0)
-            if decision == "deny":
-                print(json.dumps({
-                    "hookSpecificOutput": {
-                        "hookEventName": "PermissionRequest",
-                        "decision": {
-                            "behavior": "deny",
-                            "message": reason or "Denied by user via Vibe Notch",
-                        },
-                    }
-                }))
-                sys.exit(0)
+        send_event(state)
         sys.exit(0)
 
     elif event == "PostToolUse":
