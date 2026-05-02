@@ -85,9 +85,11 @@ struct NotchMenuView: View {
                 ) {
                     if hooksInstalled {
                         HookInstaller.uninstall()
+                        CodexHookInstaller.uninstall()
                         hooksInstalled = false
                     } else {
                         HookInstaller.installIfNeeded()
+                        CodexHookInstaller.installIfNeeded()
                         hooksInstalled = true
                     }
                 }
@@ -137,7 +139,7 @@ struct NotchMenuView: View {
     }
 
     private func refreshStates() {
-        hooksInstalled = HookInstaller.isInstalled()
+        hooksInstalled = HookInstaller.isInstalled() && CodexHookInstaller.isInstalled()
         launchAtLogin = SMAppService.mainApp.status == .enabled
         screenSelector.refreshScreens()
     }

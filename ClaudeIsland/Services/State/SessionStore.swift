@@ -179,10 +179,13 @@ actor SessionStore {
     }
 
     private func createSession(from event: HookEvent) -> SessionState {
-        SessionState(
+        let agentKind: AgentKind = event.agent == "codex" ? .codex : .claude
+        return SessionState(
             sessionId: event.sessionId,
             cwd: event.cwd,
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
+            agentKind: agentKind,
+            sessionFilePath: agentKind == .codex ? event.transcriptPath : nil,
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
             isInTmux: false,  // Will be updated
@@ -585,10 +588,15 @@ actor SessionStore {
         guard var session = sessions[payload.sessionId] else { return }
 
         // Update conversationInfo from JSONL (summary, lastMessage, etc.)
-        let conversationInfo = await ConversationParser.shared.parse(
-            sessionId: payload.sessionId,
-            cwd: session.cwd
-        )
+        let conversationInfo: ConversationInfo
+        if session.agentKind == .codex, let sessionFile = session.sessionFilePath {
+            conversationInfo = await CodexConversationParser.shared.parse(sessionFile: sessionFile)
+        } else {
+            conversationInfo = await ConversationParser.shared.parse(
+                sessionId: payload.sessionId,
+                cwd: session.cwd
+            )
+        }
         session.conversationInfo = conversationInfo
 
         // Handle /clear reconciliation - remove items that no longer exist in parser state

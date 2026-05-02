@@ -91,6 +91,8 @@ private struct BlockRenderer: View {
             CodeBlockView(code: codeBlock.code)
         } else if let blockQuote = markup as? BlockQuote {
             blockQuoteView(blockQuote)
+        } else if let table = markup as? Markdown.Table {
+            MarkdownTableView(table: table, baseColor: baseColor, fontSize: fontSize)
         } else if let list = markup as? UnorderedList {
             unorderedListView(list)
         } else if let list = markup as? OrderedList {
@@ -179,6 +181,154 @@ private struct BlockRenderer: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Table View
+
+private struct MarkdownTableView: View {
+    let table: Markdown.Table
+    let baseColor: Color
+    let fontSize: CGFloat
+
+    private var columnCount: Int {
+        max(table.maxColumnCount, 1)
+    }
+
+    private var headerCells: [Markdown.Table.Cell] {
+        Array(table.head.cells)
+    }
+
+    private var bodyRows: [[Markdown.Table.Cell]] {
+        Array(table.body.rows).map { Array($0.cells) }
+    }
+
+    private var columnWidths: [CGFloat] {
+        (0..<columnCount).map { column in
+            let headerLength = plainTextLength(cell(at: column, in: headerCells))
+            let bodyLength = bodyRows.map { plainTextLength(cell(at: column, in: $0)) }.max() ?? 0
+            let longest = max(headerLength, bodyLength)
+            return min(max(CGFloat(longest) * 7 + 28, 72), 220)
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                MarkdownTableRowView(
+                    cells: headerCells,
+                    widths: columnWidths,
+                    alignments: table.columnAlignments,
+                    isHeader: true,
+                    baseColor: baseColor,
+                    fontSize: fontSize
+                )
+
+                ForEach(Array(bodyRows.enumerated()), id: \.offset) { _, row in
+                    MarkdownTableRowView(
+                        cells: row,
+                        widths: columnWidths,
+                        alignments: table.columnAlignments,
+                        isHeader: false,
+                        baseColor: baseColor,
+                        fontSize: fontSize
+                    )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(baseColor.opacity(0.14), lineWidth: 1)
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func cell(at index: Int, in cells: [Markdown.Table.Cell]) -> Markdown.Table.Cell? {
+        guard cells.indices.contains(index) else { return nil }
+        return cells[index]
+    }
+
+    private func plainTextLength(_ cell: Markdown.Table.Cell?) -> Int {
+        cell?.plainText.count ?? 0
+    }
+}
+
+private struct MarkdownTableRowView: View {
+    let cells: [Markdown.Table.Cell]
+    let widths: [CGFloat]
+    let alignments: [Markdown.Table.ColumnAlignment?]
+    let isHeader: Bool
+    let baseColor: Color
+    let fontSize: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(widths.indices, id: \.self) { index in
+                MarkdownTableCellView(
+                    cell: cell(at: index),
+                    width: widths[index],
+                    alignment: alignment(at: index),
+                    isHeader: isHeader,
+                    baseColor: baseColor,
+                    fontSize: fontSize
+                )
+            }
+        }
+    }
+
+    private func cell(at index: Int) -> Markdown.Table.Cell? {
+        guard cells.indices.contains(index) else { return nil }
+        return cells[index]
+    }
+
+    private func alignment(at index: Int) -> Alignment {
+        guard alignments.indices.contains(index), let alignment = alignments[index] else {
+            return .leading
+        }
+
+        switch alignment {
+        case .left:
+            return .leading
+        case .center:
+            return .center
+        case .right:
+            return .trailing
+        }
+    }
+}
+
+private struct MarkdownTableCellView: View {
+    let cell: Markdown.Table.Cell?
+    let width: CGFloat
+    let alignment: Alignment
+    let isHeader: Bool
+    let baseColor: Color
+    let fontSize: CGFloat
+
+    var body: some View {
+        InlineRenderer(
+            children: cell.map { Array($0.inlineChildren) } ?? [],
+            baseColor: isHeader ? baseColor : baseColor.opacity(0.85),
+            fontSize: fontSize
+        )
+        .font(.system(size: fontSize, weight: isHeader ? .semibold : .regular))
+        .lineSpacing(3)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: width, alignment: alignment)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(isHeader ? baseColor.opacity(0.10) : Color.white.opacity(0.035))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(baseColor.opacity(0.10))
+                .frame(width: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(baseColor.opacity(isHeader ? 0.18 : 0.08))
+                .frame(height: 1)
         }
     }
 }

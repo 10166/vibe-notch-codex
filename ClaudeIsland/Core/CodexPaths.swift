@@ -21,7 +21,28 @@ enum CodexPaths {
         codexDir.appendingPathComponent("sessions")
     }
 
+    static var hooksDir: URL {
+        codexDir.appendingPathComponent("hooks")
+    }
+
+    static var hooksFile: URL {
+        codexDir.appendingPathComponent("hooks.json")
+    }
+
+    static var configFile: URL {
+        codexDir.appendingPathComponent("config.toml")
+    }
+
     static var sessionIndexFile: URL {
         codexDir.appendingPathComponent("session_index.jsonl")
+    }
+
+    /// Shell-safe absolute path for hook commands in hooks.json.
+    static var hookScriptShellPath: String {
+        shellQuote(hooksDir.appendingPathComponent("codex-island-state.py").path)
+    }
+
+    private static func shellQuote(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
