@@ -13,6 +13,12 @@ actor CodexConversationParser {
 
     nonisolated static let logger = Logger(subsystem: "com.claudeisland", category: "CodexParser")
 
+    enum TurnStatus: Sendable {
+        case unknown
+        case running
+        case complete
+    }
+
     private var incrementalState: [String: IncrementalParseState] = [:]
 
     private struct IncrementalParseState {
@@ -78,6 +84,32 @@ actor CodexConversationParser {
             lastUserMessageDate: lastUserMessageDate,
             usage: usage
         )
+    }
+
+    func latestTurnStatus(sessionFile: String) -> TurnStatus {
+        guard let content = try? String(contentsOfFile: sessionFile, encoding: .utf8) else {
+            return .unknown
+        }
+
+        var status: TurnStatus = .unknown
+        for line in content.components(separatedBy: "\n") where !line.isEmpty {
+            guard let json = Self.parseJSON(line),
+                  json["type"] as? String == "event_msg",
+                  let payload = json["payload"] as? [String: Any],
+                  let payloadType = payload["type"] as? String else {
+                continue
+            }
+
+            switch payloadType {
+            case "task_started":
+                status = .running
+            case "task_complete":
+                status = .complete
+            default:
+                continue
+            }
+        }
+        return status
     }
 
     func parseFullConversation(sessionId: String, sessionFile: String) -> [ChatMessage] {
