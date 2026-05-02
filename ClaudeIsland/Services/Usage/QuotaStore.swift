@@ -5,6 +5,7 @@
 //  Main-actor bridge between SwiftUI and the background quota providers.
 //
 
+import Combine
 import Foundation
 
 @MainActor
