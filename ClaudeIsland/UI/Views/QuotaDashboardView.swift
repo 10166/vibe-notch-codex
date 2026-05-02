@@ -210,10 +210,16 @@ private struct QuotaProviderCard: View {
         case .networkError(let detail):
             return detail
         case .unauthorized:
+            if let plan = snapshot?.identity?.plan, plan.hasPrefix("BYOK:") {
+                return "Invalid API key. Check your BYOK configuration in settings.json."
+            }
             return "Your session has expired. Please re-authenticate."
         case .invalidResponse:
             return "Could not parse the quota response."
         case .notAvailable:
+            if let plan = snapshot?.identity?.plan, plan.hasPrefix("BYOK:") {
+                return "Quota information is not available for this BYOK provider."
+            }
             return "Quota information is not available at this time."
         }
     }

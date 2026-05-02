@@ -38,11 +38,17 @@ final class QuotaStore: ObservableObject {
         isRefreshing = true
 
         refreshTask = Task {
-            async let claudeResult = ClaudeQuotaProvider.fetch()
+            let claudeResult: QuotaProviderSnapshot
+            if let config = BYOKDetector.detect() {
+                claudeResult = await Self.fetchBYOKQuota(config: config)
+            } else {
+                claudeResult = await ClaudeQuotaProvider.fetch()
+            }
+
             async let codexResult = CodexQuotaProvider.fetch()
 
             let providers: [QuotaProvider: QuotaProviderSnapshot] = [
-                .claude: await claudeResult,
+                .claude: claudeResult,
                 .codex: await codexResult,
             ]
 
@@ -55,6 +61,24 @@ final class QuotaStore: ObservableObject {
                 )
             }
             isRefreshing = false
+        }
+    }
+
+    private static func fetchBYOKQuota(config: BYOKConfiguration) async -> QuotaProviderSnapshot {
+        switch config.provider {
+        case .zhiPu:
+            return await ZhiPuQuotaProvider.fetch(apiKey: config.apiKey)
+        case .deepSeek:
+            return await DeepSeekQuotaProvider.fetch(apiKey: config.apiKey)
+        case .openRouter:
+            return await OpenRouterQuotaProvider.fetch(apiKey: config.apiKey)
+        case .anthropicAPI, .unknown:
+            return QuotaProviderSnapshot(
+                provider: .claude,
+                identity: QuotaProviderIdentity(email: nil, plan: "BYOK: \(config.provider.displayName)"),
+                error: .notAvailable,
+                updatedAt: Date()
+            )
         }
     }
 }
