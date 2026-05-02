@@ -37,46 +37,57 @@ struct QuotaDashboardView: View {
         .onAppear {
             store.start()
         }
-        .onDisappear {
-            store.stop()
-        }
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Button {
-                viewModel.showMenu()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.55))
-                    .frame(width: 22, height: 22)
+        VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                Button {
+                    viewModel.showMenu()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.55))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+
+                Text("API Quota")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+
+                Spacer()
+
+                if store.isRefreshing {
+                    ProgressView()
+                        .scaleEffect(0.45)
+                        .frame(width: 16, height: 16)
+                }
+
+                Button {
+                    store.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.45))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isRefreshing)
             }
-            .buttonStyle(.plain)
+            .padding(.vertical, 4)
 
-            Text("API Quota")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.9))
-
-            Spacer()
-
-            if store.isRefreshing {
-                ProgressView()
-                    .scaleEffect(0.45)
-                    .frame(width: 16, height: 16)
+            if let lastUpdated = store.snapshot.lastUpdatedAt {
+                HStack {
+                    Spacer()
+                    Text("Updated \(lastUpdated, style: .relative) ago")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+                .padding(.trailing, 8)
+                .padding(.bottom, 2)
             }
-
-            Button {
-                store.refresh()
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.45))
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
     }
 }
 

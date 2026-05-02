@@ -106,12 +106,10 @@ public nonisolated struct QuotaProviderSnapshot: Equatable, Sendable {
 
 public nonisolated struct QuotaSnapshot: Equatable, Sendable {
     public var providers: [QuotaProvider: QuotaProviderSnapshot]
-    public var isRefreshing: Bool
     public var lastUpdatedAt: Date?
 
     public static let empty = QuotaSnapshot(
         providers: [:],
-        isRefreshing: false,
         lastUpdatedAt: nil
     )
 }

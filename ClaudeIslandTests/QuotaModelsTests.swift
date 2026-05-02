@@ -7,7 +7,6 @@
 
 import SwiftUI
 import XCTest
-import SwiftUI
 
 final class QuotaModelsTests: XCTestCase {
 
@@ -38,7 +37,6 @@ final class QuotaModelsTests: XCTestCase {
     func testEmptySnapshot() {
         let snapshot = QuotaSnapshot.empty
         XCTAssertTrue(snapshot.providers.isEmpty)
-        XCTAssertFalse(snapshot.isRefreshing)
         XCTAssertNil(snapshot.lastUpdatedAt)
     }
 

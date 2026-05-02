@@ -18,31 +18,26 @@ final class QuotaStore: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var periodicTask: Task<Void, Never>?
 
+    private static let refreshInterval: UInt64 = 10 * 60 * 1_000_000_000
+
     private init() {}
 
     func start() {
-        refresh()
         guard periodicTask == nil else { return }
-        periodicTask = Task { [weak self] in
+        refresh()
+        periodicTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
-                self?.refresh()
+                try? await Task.sleep(nanoseconds: Self.refreshInterval)
+                refresh()
             }
         }
-    }
-
-    func stop() {
-        periodicTask?.cancel()
-        periodicTask = nil
-        refreshTask?.cancel()
-        refreshTask = nil
     }
 
     func refresh() {
         refreshTask?.cancel()
         isRefreshing = true
 
-        refreshTask = Task { [weak self] in
+        refreshTask = Task {
             async let claudeResult = ClaudeQuotaProvider.fetch()
             async let codexResult = CodexQuotaProvider.fetch()
 
@@ -53,14 +48,13 @@ final class QuotaStore: ObservableObject {
 
             guard !Task.isCancelled else { return }
 
-            await MainActor.run {
-                self?.snapshot = QuotaSnapshot(
+            if providers != snapshot.providers {
+                snapshot = QuotaSnapshot(
                     providers: providers,
-                    isRefreshing: false,
                     lastUpdatedAt: Date()
                 )
-                self?.isRefreshing = false
             }
+            isRefreshing = false
         }
     }
 }

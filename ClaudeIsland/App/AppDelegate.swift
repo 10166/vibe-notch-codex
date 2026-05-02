@@ -70,9 +70,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         HookInstaller.installIfNeeded()
         CodexHookInstaller.installIfNeeded()
 
-        // Start quota monitoring
-        QuotaStore.shared.start()
-
         NSApplication.shared.setActivationPolicy(.accessory)
 
         windowManager = WindowManager()
