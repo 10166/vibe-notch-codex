@@ -16,6 +16,9 @@ enum SessionEvent: Sendable {
     /// A hook event was received from Claude Code
     case hookReceived(HookEvent)
 
+    /// A Codex CLI JSONL session was discovered or updated
+    case codexSessionDiscovered(CodexSessionSnapshot)
+
     // MARK: - Permission Events (user actions)
 
     /// User approved a permission request
@@ -185,6 +188,8 @@ extension SessionEvent: CustomStringConvertible {
         switch self {
         case .hookReceived(let event):
             return "hookReceived(\(event.event), session: \(event.sessionId.prefix(8)))"
+        case .codexSessionDiscovered(let snapshot):
+            return "codexSessionDiscovered(session: \(snapshot.sessionId.prefix(8)))"
         case .permissionApproved(let sessionId, let toolUseId):
             return "permissionApproved(session: \(sessionId.prefix(8)), tool: \(toolUseId.prefix(12)))"
         case .permissionDenied(let sessionId, let toolUseId, _):

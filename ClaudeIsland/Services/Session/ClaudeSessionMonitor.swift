@@ -73,10 +73,17 @@ class ClaudeSessionMonitor: ObservableObject {
                 }
             }
         )
+
+        CodexSessionWatcher.shared.start { snapshot in
+            Task {
+                await SessionStore.shared.process(.codexSessionDiscovered(snapshot))
+            }
+        }
     }
 
     func stopMonitoring() {
         HookSocketServer.shared.stop()
+        CodexSessionWatcher.shared.stop()
         Task {
             await SessionStore.shared.stopPeriodicStatusCheck()
         }

@@ -2,7 +2,7 @@
   <img src="ClaudeIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Logo" width="100" height="100">
   <h3 align="center">Vibe Notch (previously Claude Island)</h3>
   <p align="center">
-    A macOS menu bar app that brings Dynamic Island-style notifications to Claude Code CLI sessions.
+    A macOS menu bar app that brings Dynamic Island-style notifications to Claude Code and Codex CLI sessions.
     <br />
     <br />
     <a href="https://github.com/farouqaldori/vibe-notch/releases/latest" target="_blank" rel="noopener noreferrer">
@@ -21,15 +21,15 @@
 ## Features
 
 - **Notch UI** — Animated overlay that expands from the MacBook notch
-- **Live Session Monitoring** — Track multiple Claude Code sessions in real-time
-- **Permission Approvals** — Approve or deny tool executions directly from the notch
+- **Live Session Monitoring** — Track multiple Claude Code and Codex CLI sessions in real-time
+- **Claude Permission Approvals** — Approve or deny Claude Code tool executions directly from the notch
 - **Chat History** — View full conversation history with markdown rendering
 - **Auto-Setup** — Hooks install automatically on first launch
 
 ## Requirements
 
 - macOS 15.6+
-- Claude Code CLI
+- Claude Code CLI and/or Codex CLI
 
 ## Install
 
@@ -41,16 +41,16 @@ xcodebuild -scheme ClaudeIsland -configuration Release build
 
 ## How It Works
 
-Vibe Notch installs hooks into `~/.claude/hooks/` that communicate session state via a Unix socket. The app listens for events and displays them in the notch overlay.
+Vibe Notch installs Claude Code hooks into `~/.claude/hooks/` that communicate session state via a Unix socket. For Codex CLI, it watches recent JSONL sessions under `~/.codex/sessions/` and renders them through the same notch UI.
 
-When Claude needs permission to run a tool, the notch expands with approve/deny buttons—no need to switch to the terminal.
+When Claude needs permission to run a tool, the notch expands with approve/deny buttons—no need to switch to the terminal. Codex CLI sessions currently support discovery, status, token usage, and chat history from the local session log.
 
 ## Analytics
 
 Vibe Notch uses Mixpanel to collect anonymous usage data:
 
 - **App Launched** — App version, build number, macOS version
-- **Session Started** — When a new Claude Code session is detected
+- **Session Started** — When a new Claude Code or Codex CLI session is detected
 
 No personal data or conversation content is collected.
 

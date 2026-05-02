@@ -28,7 +28,7 @@ struct ClaudeInstancesView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.4))
 
-            Text("Run claude in terminal")
+            Text("Run claude or codex in terminal")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.25))
         }
@@ -176,6 +176,17 @@ struct InstanceRow: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
                         .lineLimit(1)
+
+                    if session.agentKind == .codex {
+                        Text("Codex")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.55))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().fill(Color.white.opacity(0.08))
+                            )
+                    }
 
                     // Token usage indicator
                     if session.usage.totalTokens > 0 {
@@ -329,12 +340,16 @@ struct InstanceRow: View {
     private var stateIndicator: some View {
         switch session.phase {
         case .processing, .compacting:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(claudeOrange)
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+            if session.agentKind == .codex {
+                AgentLoadingIndicator(kind: .codex)
+            } else {
+                Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(claudeOrange)
+                    .onReceive(spinnerTimer) { _ in
+                        spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
+                    }
+            }
         case .waitingForApproval:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))

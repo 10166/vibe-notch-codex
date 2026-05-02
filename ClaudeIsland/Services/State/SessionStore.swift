@@ -60,6 +60,9 @@ actor SessionStore {
         case .hookReceived(let hookEvent):
             await processHookEvent(hookEvent)
 
+        case .codexSessionDiscovered(let snapshot):
+            await processCodexSession(snapshot)
+
         case .permissionApproved(let sessionId, let toolUseId):
             await processPermissionApproved(sessionId: sessionId, toolUseId: toolUseId)
 
@@ -185,6 +188,33 @@ actor SessionStore {
             isInTmux: false,  // Will be updated
             phase: .idle
         )
+    }
+
+    private func processCodexSession(_ snapshot: CodexSessionSnapshot) async {
+        let isNewSession = sessions[snapshot.sessionId] == nil
+        var session = sessions[snapshot.sessionId] ?? SessionState(
+            sessionId: snapshot.sessionId,
+            cwd: snapshot.cwd,
+            projectName: URL(fileURLWithPath: snapshot.cwd).lastPathComponent,
+            agentKind: .codex,
+            sessionFilePath: snapshot.sessionFile,
+            phase: .idle
+        )
+
+        if isNewSession {
+            Mixpanel.mainInstance().track(event: "Session Started", properties: ["agent": "codex"])
+        }
+
+        session.lastActivity = snapshot.updatedAt
+        session.conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
+
+        let newPhase: SessionPhase = snapshot.isProcessing ? .processing : .waitingForInput
+        if session.phase.canTransition(to: newPhase) {
+            session.phase = newPhase
+        }
+
+        sessions[snapshot.sessionId] = session
+        scheduleFileSync(sessionId: snapshot.sessionId, cwd: snapshot.cwd)
     }
 
     private func processToolTracking(event: HookEvent, session: inout SessionState) {
@@ -933,20 +963,35 @@ actor SessionStore {
     // MARK: - History Loading
 
     private func loadHistoryFromFile(sessionId: String, cwd: String) async {
-        // Parse file asynchronously
-        let messages = await ConversationParser.shared.parseFullConversation(
-            sessionId: sessionId,
-            cwd: cwd
-        )
-        let completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
-        let toolResults = await ConversationParser.shared.toolResults(for: sessionId)
-        let structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+        let session = sessions[sessionId]
+        let messages: [ChatMessage]
+        let completedTools: Set<String>
+        let toolResults: [String: ConversationParser.ToolResult]
+        let structuredResults: [String: ToolResultData]
+        let conversationInfo: ConversationInfo
 
-        // Also parse conversationInfo (summary, lastMessage, etc.)
-        let conversationInfo = await ConversationParser.shared.parse(
-            sessionId: sessionId,
-            cwd: cwd
-        )
+        if session?.agentKind == .codex, let sessionFile = session?.sessionFilePath {
+            messages = await CodexConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                sessionFile: sessionFile
+            )
+            completedTools = await CodexConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await CodexConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = await CodexConversationParser.shared.structuredResults(for: sessionId)
+            conversationInfo = await CodexConversationParser.shared.parse(sessionFile: sessionFile)
+        } else {
+            messages = await ConversationParser.shared.parseFullConversation(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+            completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
+            toolResults = await ConversationParser.shared.toolResults(for: sessionId)
+            structuredResults = await ConversationParser.shared.structuredResults(for: sessionId)
+            conversationInfo = await ConversationParser.shared.parse(
+                sessionId: sessionId,
+                cwd: cwd
+            )
+        }
 
         // Process loaded history
         await process(.historyLoaded(
@@ -1011,11 +1056,20 @@ actor SessionStore {
             try? await Task.sleep(nanoseconds: syncDebounceNs)
             guard !Task.isCancelled else { return }
 
-            // Parse incrementally - only get NEW messages since last call
-            let result = await ConversationParser.shared.parseIncremental(
-                sessionId: sessionId,
-                cwd: cwd
-            )
+            guard let session = await self?.session(for: sessionId) else { return }
+
+            let result: ConversationParser.IncrementalParseResult
+            if session.agentKind == .codex, let sessionFile = session.sessionFilePath {
+                result = await CodexConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    sessionFile: sessionFile
+                )
+            } else {
+                result = await ConversationParser.shared.parseIncremental(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+            }
 
             if result.clearDetected {
                 await self?.process(.clearDetected(sessionId: sessionId))
@@ -1089,6 +1143,12 @@ actor SessionStore {
                     removedSession = true
                     continue
                 }
+            } else if session.agentKind == .codex,
+                      Date().timeIntervalSince(session.lastActivity) > 30 * 60 {
+                sessions.removeValue(forKey: sessionId)
+                cancelPendingSync(sessionId: sessionId)
+                removedSession = true
+                continue
             }
 
             let needsSync: Bool

@@ -355,12 +355,22 @@ struct ChatView: View {
 
     /// Can send messages only if session is in tmux
     private var canSendMessages: Bool {
-        session.isInTmux && session.tty != nil
+        session.agentKind == .claude && session.isInTmux && session.tty != nil
+    }
+
+    private var inputPlaceholder: String {
+        if canSendMessages {
+            return session.agentKind.chatPlaceholder
+        }
+        if session.agentKind == .codex {
+            return "Codex CLI sessions are view-only"
+        }
+        return "Open \(session.agentKind.displayName) in tmux to enable messaging"
     }
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            TextField(canSendMessages ? "Message Claude..." : "Open Claude Code in tmux to enable messaging", text: $inputText)
+            TextField(inputPlaceholder, text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(canSendMessages ? .white : .white.opacity(0.4))

@@ -54,6 +54,12 @@ struct NotchView: View {
         }
     }
 
+    private var latestAgentKind: AgentKind {
+        sessionMonitor.instances.max { lhs, rhs in
+            lhs.lastActivity < rhs.lastActivity
+        }?.agentKind ?? .claude
+    }
+
     // MARK: - Sizing
 
     private var closedNotchSize: CGSize {
@@ -249,7 +255,7 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    ClaudeCrabIcon(size: 14, animateLegs: isProcessing)
+                    AgentLogoIcon(kind: latestAgentKind, size: 14, isActive: isProcessing)
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
@@ -281,7 +287,7 @@ struct NotchView: View {
             // Right side - spinner when processing/pending, checkmark when waiting for input
             if showClosedActivity {
                 if isProcessing || hasPendingPermission {
-                    ProcessingSpinner()
+                    AgentLoadingIndicator(kind: latestAgentKind)
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
                         .padding(.trailing, viewModel.status == .opened ? 0 : 4)
@@ -309,7 +315,7 @@ struct NotchView: View {
             // Show static crab only if not showing activity in headerRow
             // (headerRow handles crab + indicator when showClosedActivity is true)
             if !showClosedActivity {
-                ClaudeCrabIcon(size: 14)
+                AgentLogoIcon(kind: latestAgentKind, size: 14)
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }

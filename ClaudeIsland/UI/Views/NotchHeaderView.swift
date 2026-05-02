@@ -8,6 +8,94 @@
 import Combine
 import SwiftUI
 
+struct AgentLogoIcon: View {
+    let kind: AgentKind
+    let size: CGFloat
+    var isActive: Bool = false
+
+    var body: some View {
+        switch kind {
+        case .claude:
+            ClaudeCrabIcon(size: size, animateLegs: isActive)
+        case .codex:
+            ChatGPTKnotIcon(size: size)
+        }
+    }
+}
+
+struct AgentLoadingIndicator: View {
+    let kind: AgentKind
+
+    var body: some View {
+        switch kind {
+        case .claude:
+            ProcessingSpinner()
+        case .codex:
+            CodexLoadingIcon(size: 14)
+        }
+    }
+}
+
+struct ChatGPTKnotIcon: View {
+    let size: CGFloat
+
+    init(size: CGFloat = 16) {
+        self.size = size
+    }
+
+    var body: some View {
+        Image("ChatGPTLogo")
+            .resizable()
+            .interpolation(.high)
+            .antialiased(true)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+            .frame(width: size, height: size)
+    }
+}
+
+struct CodexLoadingIcon: View {
+    let size: CGFloat
+
+    @State private var phase = 0
+    private let timer = Timer.publish(every: 0.16, on: .main, in: .common).autoconnect()
+
+    init(size: CGFloat = 14) {
+        self.size = size
+    }
+
+    var body: some View {
+        Canvas { context, _ in
+            let center = CGPoint(x: size / 2, y: size / 2)
+            let radius = size * 0.34
+            let pixel = max(2, size * 0.18)
+
+            for index in 0..<6 {
+                let angle = CGFloat(index) * .pi / 3 - .pi / 2
+                let point = CGPoint(
+                    x: center.x + cos(angle) * radius,
+                    y: center.y + sin(angle) * radius
+                )
+                let isActive = index == phase % 6
+                let rect = CGRect(
+                    x: point.x - pixel / 2,
+                    y: point.y - pixel / 2,
+                    width: pixel,
+                    height: pixel
+                )
+
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: pixel * 0.35),
+                    with: .color(TerminalColors.green.opacity(isActive ? 1 : 0.34))
+                )
+            }
+        }
+        .frame(width: size, height: size)
+        .onReceive(timer) { _ in
+            phase = (phase + 1) % 6
+        }
+    }
+}
+
 struct ClaudeCrabIcon: View {
     let size: CGFloat
     let color: Color
@@ -169,4 +257,3 @@ struct ReadyForInputIndicatorIcon: View {
         .frame(width: size, height: size)
     }
 }
-

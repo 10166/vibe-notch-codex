@@ -8,6 +8,25 @@
 
 import Foundation
 
+enum AgentKind: String, Equatable, Sendable {
+    case claude
+    case codex
+
+    var displayName: String {
+        switch self {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex CLI"
+        }
+    }
+
+    var chatPlaceholder: String {
+        switch self {
+        case .claude: return "Message Claude..."
+        case .codex: return "Message Codex..."
+        }
+    }
+}
+
 /// Complete state for a single Claude session
 /// This is the single source of truth - all state reads and writes go through SessionStore
 struct SessionState: Equatable, Identifiable, Sendable {
@@ -16,6 +35,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
     let sessionId: String
     let cwd: String
     let projectName: String
+    let agentKind: AgentKind
+    let sessionFilePath: String?
 
     // MARK: - Instance Metadata
 
@@ -68,6 +89,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
         sessionId: String,
         cwd: String,
         projectName: String? = nil,
+        agentKind: AgentKind = .claude,
+        sessionFilePath: String? = nil,
         pid: Int? = nil,
         tty: String? = nil,
         isInTmux: Bool = false,
@@ -86,6 +109,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.sessionId = sessionId
         self.cwd = cwd
         self.projectName = projectName ?? URL(fileURLWithPath: cwd).lastPathComponent
+        self.agentKind = agentKind
+        self.sessionFilePath = sessionFilePath
         self.pid = pid
         self.tty = tty
         self.isInTmux = isInTmux
