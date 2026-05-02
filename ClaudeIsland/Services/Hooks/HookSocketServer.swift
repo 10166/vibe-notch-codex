@@ -434,10 +434,8 @@ class HookSocketServer {
             } else if let cachedToolUseId = popCachedToolUseId(event: event) {
                 toolUseId = cachedToolUseId
             } else {
-                logger.warning("Permission request missing tool_use_id for \(event.sessionId.prefix(8), privacy: .public) - no cache hit")
-                close(clientSocket)
-                eventHandler?(event)
-                return
+                toolUseId = "permission-\(UUID().uuidString)"
+                logger.warning("Permission request missing tool_use_id for \(event.sessionId.prefix(8), privacy: .public) - using temporary id \(toolUseId.prefix(12), privacy: .public)")
             }
 
             logger.debug("Permission request - keeping socket open for \(event.sessionId.prefix(8), privacy: .public) tool:\(toolUseId.prefix(12), privacy: .public)")

@@ -209,10 +209,11 @@ actor SessionStore {
         }
 
         session.lastActivity = snapshot.updatedAt
-        session.conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
+        let conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
+        session.conversationInfo = conversationInfo
 
         if !session.phase.isWaitingForApproval {
-            let newPhase: SessionPhase = snapshot.isProcessing ? .processing : .waitingForInput
+            let newPhase = codexPhase(for: snapshot, conversationInfo: conversationInfo)
             if session.phase.canTransition(to: newPhase) {
                 session.phase = newPhase
             }
@@ -220,6 +221,20 @@ actor SessionStore {
 
         sessions[snapshot.sessionId] = session
         scheduleFileSync(sessionId: snapshot.sessionId, cwd: snapshot.cwd)
+    }
+
+    private nonisolated func codexPhase(
+        for snapshot: CodexSessionSnapshot,
+        conversationInfo: ConversationInfo
+    ) -> SessionPhase {
+        // The Codex watcher uses a file modification window as a coarse
+        // activity signal. Final assistant output also updates the JSONL file,
+        // so prefer the semantic transcript state once a reply is complete.
+        if conversationInfo.lastMessageRole == "assistant" {
+            return .waitingForInput
+        }
+
+        return snapshot.isProcessing ? .processing : .waitingForInput
     }
 
     private func processToolTracking(event: HookEvent, session: inout SessionState) {

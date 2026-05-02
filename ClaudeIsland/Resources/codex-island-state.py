@@ -93,6 +93,8 @@ def main():
         state["status"] = "waiting_for_approval"
         state["tool"] = data.get("tool_name")
         state["tool_input"] = tool_input
+        if data.get("tool_use_id"):
+            state["tool_use_id"] = data.get("tool_use_id")
 
         response = send_event(state)
         if response:
