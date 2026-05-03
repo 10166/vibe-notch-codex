@@ -60,6 +60,27 @@ struct NotchView: View {
         }?.agentKind ?? .claude
     }
 
+    private var activeAgentKinds: [AgentKind] {
+        let activeSessions = sessionMonitor.instances.filter {
+            $0.phase == .processing || $0.phase == .compacting || $0.phase.isWaitingForApproval
+        }
+        var kinds: [AgentKind] = []
+
+        if activeSessions.contains(where: { $0.agentKind == .claude }) {
+            kinds.append(.claude)
+        }
+
+        if activeSessions.contains(where: { $0.agentKind == .codex }) {
+            kinds.append(.codex)
+        }
+
+        return kinds
+    }
+
+    private var displayedAgentKinds: [AgentKind] {
+        activeAgentKinds.isEmpty ? [latestAgentKind] : activeAgentKinds
+    }
+
     // MARK: - Sizing
 
     private var closedNotchSize: CGSize {
@@ -263,7 +284,7 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    AgentLogoIcon(kind: latestAgentKind, size: 14, isActive: isProcessing)
+                    AgentLogoStackIcon(kinds: displayedAgentKinds, size: 14, isActive: isProcessing)
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
@@ -323,7 +344,7 @@ struct NotchView: View {
             // Show static crab only if not showing activity in headerRow
             // (headerRow handles crab + indicator when showClosedActivity is true)
             if !showClosedActivity {
-                AgentLogoIcon(kind: latestAgentKind, size: 14)
+                AgentLogoStackIcon(kinds: displayedAgentKinds, size: 14)
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }

@@ -23,6 +23,45 @@ struct AgentLogoIcon: View {
     }
 }
 
+struct AgentLogoStackIcon: View {
+    let kinds: [AgentKind]
+    let size: CGFloat
+    var isActive: Bool = false
+
+    private var showsDualAgents: Bool {
+        kinds.contains(.claude) && kinds.contains(.codex)
+    }
+
+    private var singleKind: AgentKind {
+        kinds.first ?? .claude
+    }
+
+    private var codexOffset: CGFloat {
+        size * 0.2
+    }
+
+    private var stackWidth: CGFloat {
+        let claudeWidth = size * (66.0 / 52.0)
+        return max(claudeWidth, size + codexOffset)
+    }
+
+    var body: some View {
+        if showsDualAgents {
+            ZStack(alignment: .leading) {
+                AgentLogoIcon(kind: .codex, size: size)
+                    .offset(x: codexOffset)
+                    .zIndex(0)
+
+                AgentLogoIcon(kind: .claude, size: size, isActive: isActive)
+                    .zIndex(1)
+            }
+            .frame(width: stackWidth, height: size, alignment: .leading)
+        } else {
+            AgentLogoIcon(kind: singleKind, size: size, isActive: isActive)
+        }
+    }
+}
+
 struct AgentLoadingIndicator: View {
     let kind: AgentKind
 
