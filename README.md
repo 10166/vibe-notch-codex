@@ -18,6 +18,19 @@
 >
 > Vibe Notch now supports both Claude Code and Codex CLI sessions, including local usage analytics and API quota visibility for both providers.
 
+## Fork Notice
+
+This repository is a maintained fork of [farouqaldori/vibe-notch](https://github.com/farouqaldori/vibe-notch). The fork keeps the original notch-style Claude Code workflow and adds a broader local agent dashboard for Claude Code and Codex CLI.
+
+Notable changes in this fork:
+
+- Codex CLI session discovery, hooks, and permission surfacing
+- Cross-provider chat history parsing for Claude Code and Codex CLI logs
+- Local usage analytics with token, cost, and session heatmaps over 12 weeks, 6 months, and 1 year
+- API quota dashboards for Claude Code and Codex CLI
+- SQLite-backed local usage cache that avoids storing conversation content
+- GitHub tag-based DMG packaging and release uploads
+
 ## Features
 
 - **Notch UI** — Animated overlay that expands from the MacBook notch

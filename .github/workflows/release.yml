@@ -1,0 +1,132 @@
+name: Release DMG
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, for example v1.3.5"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build and upload DMG
+    runs-on: macos-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Resolve tag
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate app version
+        run: |
+          project_version=$(xcodebuild -project ClaudeIsland.xcodeproj -scheme ClaudeIsland -showBuildSettings 2>/dev/null | awk '/MARKETING_VERSION = / { print $3; exit }')
+          if [ "$project_version" != "${{ steps.release.outputs.version }}" ]; then
+            echo "Tag ${{ steps.release.outputs.tag }} does not match MARKETING_VERSION $project_version" >&2
+            exit 1
+          fi
+
+      - name: Build app
+        run: |
+          set -euo pipefail
+          derived_data="$RUNNER_TEMP/DerivedData"
+          xcodebuild \
+            -project ClaudeIsland.xcodeproj \
+            -scheme ClaudeIsland \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$derived_data" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            build
+
+      - name: Package DMG
+        id: package
+        run: |
+          set -euo pipefail
+          app_path="$RUNNER_TEMP/DerivedData/Build/Products/Release/Vibe Notch.app"
+          if [ ! -d "$app_path" ]; then
+            echo "App not found at $app_path" >&2
+            exit 1
+          fi
+
+          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")
+          build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$app_path/Contents/Info.plist")
+          dmg_path="$GITHUB_WORKSPACE/VibeNotch-$version.dmg"
+
+          codesign --force --deep --sign - "$app_path"
+          hdiutil create \
+            -volname "Vibe Notch" \
+            -srcfolder "$app_path" \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+
+          shasum -a 256 "$dmg_path" > "$dmg_path.sha256"
+          {
+            echo "dmg_path=$dmg_path"
+            echo "sha_path=$dmg_path.sha256"
+            echo "version=$version"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<EOF
+          ## Vibe Notch ${{ steps.release.outputs.tag }}
+
+          ### Installation
+          1. Download \`VibeNotch-${{ steps.package.outputs.version }}.dmg\`
+          2. Open the DMG and drag Vibe Notch to Applications
+          3. Launch Vibe Notch from Applications
+
+          Build: ${{ steps.package.outputs.build }}
+          Commit: $GITHUB_SHA
+          EOF
+
+      - name: Create or update GitHub release
+        run: |
+          set -euo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "${{ steps.package.outputs.dmg_path }}" \
+              "${{ steps.package.outputs.sha_path }}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$tag" \
+              "${{ steps.package.outputs.dmg_path }}" \
+              "${{ steps.package.outputs.sha_path }}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Vibe Notch $tag" \
+              --notes-file release-notes.md
+          fi
