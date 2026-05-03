@@ -229,7 +229,7 @@ struct UsageHeatmapView: View {
                         ForEach(entries) { entry in
                             let fraction = entry.value / total
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(ModelColorMap.color(for: entry.modelName).opacity(0.82))
+                                .fill(ModelColorMap.color(for: entry.modelName).opacity(0.9))
                                 .frame(width: max(2, proxy.size.width * CGFloat(fraction)))
                                 .onHover { isHovered in
                                     hoveredModelName = isHovered ? entry.modelName : nil
@@ -348,7 +348,7 @@ struct UsageHeatmapView: View {
                                         height: segHeight
                                     )
                                     let path = Path(roundedRect: rect, cornerRadius: barWidth > 3 ? 1.5 : 0)
-                                    context.fill(path, with: .color(ModelColorMap.color(for: modelName).opacity(0.82)))
+                                    context.fill(path, with: .color(ModelColorMap.color(for: modelName).opacity(0.9)))
                                     yOffset += segHeight
                                 }
                             }
@@ -1097,30 +1097,43 @@ private enum ModelColorMap {
     static func color(for modelName: String) -> Color {
         let lower = modelName.lowercased()
 
-        if lower.contains("opus") { return TerminalColors.magenta }
-        if lower.contains("sonnet") { return TerminalColors.blue }
-        if lower.contains("haiku") { return TerminalColors.green }
-        if lower.contains("gpt") { return TerminalColors.cyan }
-        if lower.contains("deepseek") { return TerminalColors.amber }
+        if lower.contains("gpt-5.5-pro") { return rgb(0.54, 0.72, 1.00) }
+        if lower.contains("gpt-5.5") { return TerminalColors.blue }
+        if lower.contains("gpt-5.4-mini") { return rgb(0.24, 0.82, 0.72) }
+        if lower.contains("gpt-5.4") { return TerminalColors.green }
+        if lower.contains("gpt-5.3-codex") { return rgb(0.62, 0.50, 1.00) }
+        if lower.contains("gpt-5.3") { return rgb(0.36, 0.78, 0.92) }
+        if lower.contains("gpt") { return rgb(0.42, 0.68, 1.00) }
+
+        if lower.contains("opus") { return rgb(0.78, 0.44, 0.86) }
+        if lower.contains("sonnet") { return rgb(0.88, 0.48, 0.62) }
+        if lower.contains("haiku") { return rgb(0.56, 0.70, 1.00) }
+
+        if lower.contains("deepseek") { return rgb(0.36, 0.78, 0.58) }
         if lower.contains("glm") { return TerminalColors.prompt }
-        if lower.contains("qwen") { return Color(red: 0.6, green: 0.4, blue: 0.9) }
-        if lower.contains("kimi") { return Color(red: 0.95, green: 0.6, blue: 0.3) }
-        if lower.contains("minimax") { return Color(red: 0.3, green: 0.75, blue: 0.65) }
+        if lower.contains("qwen") { return rgb(0.70, 0.56, 1.00) }
+        if lower.contains("kimi") { return TerminalColors.amber }
+        if lower.contains("minimax") { return rgb(0.26, 0.78, 0.78) }
 
         return fallbackColor(for: modelName)
     }
 
     private static let fallbackPalette: [Color] = [
-        Color(red: 0.7, green: 0.5, blue: 0.3),
-        Color(red: 0.5, green: 0.7, blue: 0.3),
-        Color(red: 0.3, green: 0.5, blue: 0.7),
-        Color(red: 0.7, green: 0.3, blue: 0.5),
-        Color(red: 0.3, green: 0.7, blue: 0.7),
+        TerminalColors.green,
+        TerminalColors.amber,
+        TerminalColors.blue,
+        rgb(0.24, 0.82, 0.72),
+        rgb(0.78, 0.44, 0.86),
+        TerminalColors.prompt,
     ]
 
     private static func fallbackColor(for name: String) -> Color {
         let index = abs(name.hashValue) % fallbackPalette.count
         return fallbackPalette[index]
+    }
+
+    private static func rgb(_ red: Double, _ green: Double, _ blue: Double) -> Color {
+        Color(red: red, green: green, blue: blue)
     }
 }
 
