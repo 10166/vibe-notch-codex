@@ -553,7 +553,7 @@ nonisolated private enum PricingCatalog {
     }
 
     static func estimateMicros(model: String?, tokens: UsageTokenBreakdown) -> Int64? {
-        guard let rate = rate(for: model) else { return nil }
+        guard let rate = rate(for: model, tokens: tokens) else { return nil }
         let dollars =
             Double(tokens.inputTokens) / 1_000_000 * rate.inputPerMillion +
             Double(tokens.outputTokens) / 1_000_000 * rate.outputPerMillion +
@@ -562,9 +562,13 @@ nonisolated private enum PricingCatalog {
         return Int64((dollars * 1_000_000).rounded())
     }
 
-    private static func rate(for model: String?) -> Rate? {
+    private static func rate(for model: String?, tokens: UsageTokenBreakdown) -> Rate? {
         guard let model = model?.lowercased() else { return nil }
-        // USD per 1M tokens, aligned to Anthropic/OpenAI public pricing pages.
+        // USD per 1M tokens, aligned to public provider pricing pages.
+        // CNY rates are converted with a source-checked USD/CNY rate from 2026-05-03.
+        if let domesticRate = domesticRate(for: model, tokens: tokens) {
+            return domesticRate
+        }
         if model.contains("gpt-5.5-pro") {
             return Rate(inputPerMillion: 30.0, outputPerMillion: 180.0, cacheReadPerMillion: 0.0, cacheWritePerMillion: 0.0)
         }
@@ -622,6 +626,111 @@ nonisolated private enum PricingCatalog {
             return Rate(inputPerMillion: 0.25, outputPerMillion: 1.25, cacheReadPerMillion: 0.03, cacheWritePerMillion: 0.3)
         }
         return nil
+    }
+
+    private static func domesticRate(for model: String, tokens: UsageTokenBreakdown) -> Rate? {
+        if model.contains("deepseek-reasoner") {
+            return Rate(inputPerMillion: 0.55, outputPerMillion: 2.19, cacheReadPerMillion: 0.14, cacheWritePerMillion: 0.0)
+        }
+        if model.contains("deepseek-chat") || model.contains("deepseek-v3") {
+            return Rate(inputPerMillion: 0.27, outputPerMillion: 1.10, cacheReadPerMillion: 0.07, cacheWritePerMillion: 0.0)
+        }
+
+        if model.contains("glm-5.1") {
+            return Rate(inputPerMillion: 1.40, outputPerMillion: 4.40, cacheReadPerMillion: 0.26, cacheWritePerMillion: 0.0)
+        }
+        if model.contains("glm-5-turbo") {
+            return Rate(inputPerMillion: 1.20, outputPerMillion: 4.00, cacheReadPerMillion: 0.24, cacheWritePerMillion: 0.0)
+        }
+        if model.contains("glm-5") {
+            return Rate(inputPerMillion: 1.00, outputPerMillion: 3.20, cacheReadPerMillion: 0.20, cacheWritePerMillion: 0.0)
+        }
+        if model.contains("glm-4.7-flashx") || model.contains("glm-4-7-flashx") {
+            return Rate(inputPerMillion: 0.07, outputPerMillion: 0.40, cacheReadPerMillion: 0.01, cacheWritePerMillion: 0.0)
+        }
+        if model.contains("glm-4.7") || model.contains("glm-4-7") ||
+            model.contains("glm-4.6") || model.contains("glm-4-6") ||
+            model.contains("glm-4.5") || model.contains("glm-4-5") {
+            return Rate(inputPerMillion: 0.60, outputPerMillion: 2.20, cacheReadPerMillion: 0.11, cacheWritePerMillion: 0.0)
+        }
+
+        if model.contains("kimi-k2.6") || model.contains("kimi-k2-6") {
+            return cnyRate(input: 6.50, output: 27.00, cacheRead: 1.10)
+        }
+        if model.contains("kimi-k2.5") || model.contains("kimi-k2-5") {
+            return cnyRate(input: 4.00, output: 21.00, cacheRead: 0.70)
+        }
+        if model.contains("kimi-k2") {
+            return cnyRate(input: 4.00, output: 16.00, cacheRead: 1.00)
+        }
+
+        if model.contains("minimax-m2.7-highspeed") || model.contains("minimax-m2-7-highspeed") ||
+            model.contains("minimax-m2.5-highspeed") || model.contains("minimax-m2-5-highspeed") {
+            return Rate(inputPerMillion: 0.60, outputPerMillion: 2.40, cacheReadPerMillion: 0.06, cacheWritePerMillion: 0.375)
+        }
+        if model.contains("minimax-m2.7") || model.contains("minimax-m2-7") {
+            return Rate(inputPerMillion: 0.30, outputPerMillion: 1.20, cacheReadPerMillion: 0.06, cacheWritePerMillion: 0.375)
+        }
+        if model.contains("minimax-m2.5") || model.contains("minimax-m2-5") ||
+            model.contains("minimax-m2.1") || model.contains("minimax-m2-1") ||
+            model.contains("minimax-m2") {
+            return Rate(inputPerMillion: 0.30, outputPerMillion: 1.20, cacheReadPerMillion: 0.03, cacheWritePerMillion: 0.375)
+        }
+
+        if model.contains("qwen3-max-2025") || model.contains("qwen3-max-preview") {
+            return qwenTieredRate(tokens: tokens, tiers: [
+                (32_000, 6.00, 24.00),
+                (128_000, 10.00, 40.00),
+                (252_000, 15.00, 60.00)
+            ])
+        }
+        if model.contains("qwen3-max") {
+            return qwenTieredRate(tokens: tokens, tiers: [
+                (32_000, 2.50, 10.00),
+                (128_000, 4.00, 16.00),
+                (252_000, 7.00, 28.00)
+            ])
+        }
+        if model.contains("qwen3.6-plus") || model.contains("qwen3-6-plus") {
+            return qwenTieredRate(tokens: tokens, tiers: [
+                (256_000, 2.00, 12.00),
+                (1_000_000, 8.00, 48.00)
+            ])
+        }
+        if model.contains("qwen3.5-plus") || model.contains("qwen3-5-plus") {
+            return qwenTieredRate(tokens: tokens, tiers: [
+                (128_000, 0.80, 4.80),
+                (256_000, 2.00, 12.00),
+                (1_000_000, 4.00, 24.00)
+            ])
+        }
+        if model.contains("qwen-plus") {
+            let thinking = model.contains("thinking")
+            return qwenTieredRate(tokens: tokens, tiers: [
+                (128_000, 0.80, thinking ? 8.00 : 2.00),
+                (256_000, 2.40, thinking ? 24.00 : 20.00),
+                (1_000_000, 4.80, thinking ? 64.00 : 48.00)
+            ])
+        }
+
+        return nil
+    }
+
+    private static func qwenTieredRate(tokens: UsageTokenBreakdown, tiers: [(limit: Int64, input: Double, output: Double)]) -> Rate? {
+        let billableInput = max(1, tokens.inputTokens + tokens.cacheReadTokens + tokens.cacheCreationTokens)
+        let tier = tiers.first { billableInput <= $0.limit } ?? tiers.last
+        guard let tier else { return nil }
+        return cnyRate(input: tier.input, output: tier.output)
+    }
+
+    private static func cnyRate(input: Double, output: Double, cacheRead: Double? = nil, cacheWrite: Double = 0.0) -> Rate {
+        let usdPerCny = 1.0 / 6.8265
+        return Rate(
+            inputPerMillion: input * usdPerCny,
+            outputPerMillion: output * usdPerCny,
+            cacheReadPerMillion: (cacheRead ?? input) * usdPerCny,
+            cacheWritePerMillion: cacheWrite * usdPerCny
+        )
     }
 }
 
