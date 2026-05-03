@@ -279,9 +279,9 @@ struct UsageHeatmapView: View {
                     .foregroundColor(.white.opacity(0.85))
 
                 Spacer()
-            }
 
-            DayMetricInline(bucket: presentation.selectedBucket)
+                DayMetricInline(bucket: presentation.selectedBucket)
+            }
 
             if presentation.selectedSessions.isEmpty {
                 Text(store.snapshot.sessions.isEmpty ? "No usage data yet" : "No sessions on this day")
@@ -305,11 +305,13 @@ struct UsageHeatmapView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
 
-                    HStack(spacing: 8) {
-                        ProjectMetricText(label: "Tok", value: UsageFormatters.compactTokens(item.totalTokens), accent: TerminalColors.green)
-                        ProjectMetricText(label: "Cost", value: UsageFormatters.cost(item.estimatedCostMicros), accent: TerminalColors.amber)
-                        ProjectMetricText(label: "Sess", value: "\(item.sessionCount)", accent: TerminalColors.blue)
-                    }
+                    MetricValueCluster(
+                        tokens: item.totalTokens,
+                        costMicros: item.estimatedCostMicros,
+                        sessions: item.sessionCount,
+                        size: 9,
+                        weight: .semibold
+                    )
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
@@ -704,37 +706,37 @@ private struct DayMetricInline: View {
     let bucket: UsageDayBucket
 
     var body: some View {
-        HStack(spacing: 6) {
-            ProjectMetricText(label: "Tok", value: UsageFormatters.compactTokens(bucket.totalTokens), accent: TerminalColors.green)
-            ProjectMetricText(label: "Cost", value: UsageFormatters.cost(bucket.estimatedCostMicros), accent: TerminalColors.amber)
-            ProjectMetricText(label: "Sess", value: "\(bucket.sessionCount)", accent: TerminalColors.blue)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color.white.opacity(0.045))
+        MetricValueCluster(
+            tokens: bucket.totalTokens,
+            costMicros: bucket.estimatedCostMicros,
+            sessions: bucket.sessionCount,
+            size: 12,
+            weight: .semibold
         )
     }
 }
 
-private struct ProjectMetricText: View {
-    let label: String
-    let value: String
-    let accent: Color
+private struct MetricValueCluster: View {
+    let tokens: Int64
+    let costMicros: Int64?
+    let sessions: Int
+    let size: CGFloat
+    let weight: Font.Weight
 
     var body: some View {
-        HStack(spacing: 2) {
-            Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundColor(.white.opacity(0.26))
-            Text(value)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundColor(accent.opacity(0.68))
+        HStack(spacing: 8) {
+            metricText(UsageFormatters.compactTokens(tokens), color: TerminalColors.green)
+            metricText(UsageFormatters.cost(costMicros), color: TerminalColors.amber)
+            metricText("\(sessions)", color: TerminalColors.blue)
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.68)
+        .minimumScaleFactor(0.7)
+    }
+
+    private func metricText(_ value: String, color: Color) -> some View {
+        Text(value)
+            .font(.system(size: size, weight: weight, design: .monospaced))
+            .foregroundColor(color.opacity(0.9))
     }
 }
 
