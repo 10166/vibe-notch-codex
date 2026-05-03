@@ -28,6 +28,8 @@ struct UsageHeatmapView: View {
     private let hoverTooltipWidth: CGFloat = 112
     private let hoverTooltipHeight: CGFloat = 28
     private let controlLabelWidth: CGFloat = 48
+    private let primaryControlWidth: CGFloat = 216
+    private let rangeControlWidth: CGFloat = 122
 
     var body: some View {
         let presentation = makePresentation()
@@ -105,18 +107,19 @@ struct UsageHeatmapView: View {
             HStack(spacing: 8) {
                 controlLabel("Metric")
                 metricPicker
-                    .frame(width: 216)
+                    .frame(width: primaryControlWidth)
                 Spacer(minLength: 0)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 controlLabel("Agent")
                 agentPicker
-                    .frame(width: 174)
-
+                    .frame(width: primaryControlWidth)
+                Spacer()
+                    .frame(width: 14)
                 controlLabel("Range")
                 rangePicker
-                    .frame(width: 122)
+                    .frame(width: rangeControlWidth)
                 Spacer(minLength: 0)
             }
         }
@@ -270,7 +273,7 @@ struct UsageHeatmapView: View {
 
     private func dayDetail(_ presentation: UsageHeatmapPresentation) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(selectedDateTitle(presentation.selectedDateKey))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white.opacity(0.85))
@@ -278,26 +281,19 @@ struct UsageHeatmapView: View {
                 Spacer()
             }
 
+            DayMetricInline(bucket: presentation.selectedBucket)
+
             if presentation.selectedSessions.isEmpty {
                 Text(store.snapshot.sessions.isEmpty ? "No usage data yet" : "No sessions on this day")
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.35))
                     .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
             } else {
-                daySummary(presentation.selectedBucket)
                 projectBreakdown(presentation)
                 sessionList(presentation)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    private func daySummary(_ bucket: UsageDayBucket) -> some View {
-        HStack(spacing: 6) {
-            DayMetricPill(label: "Tokens", value: UsageFormatters.compactTokens(bucket.totalTokens), accent: TerminalColors.green)
-            DayMetricPill(label: "Cost", value: UsageFormatters.cost(bucket.estimatedCostMicros), accent: TerminalColors.amber)
-            DayMetricPill(label: "Sessions", value: "\(bucket.sessionCount)", accent: TerminalColors.blue)
-        }
     }
 
     private func projectBreakdown(_ presentation: UsageHeatmapPresentation) -> some View {
@@ -309,10 +305,10 @@ struct UsageHeatmapView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
 
-                    HStack(spacing: 6) {
-                        ProjectMetricText(value: UsageFormatters.compactTokens(item.totalTokens), accent: TerminalColors.green)
-                        ProjectMetricText(value: UsageFormatters.cost(item.estimatedCostMicros), accent: TerminalColors.amber)
-                        ProjectMetricText(value: "\(item.sessionCount)s", accent: TerminalColors.blue)
+                    HStack(spacing: 8) {
+                        ProjectMetricText(label: "Tok", value: UsageFormatters.compactTokens(item.totalTokens), accent: TerminalColors.green)
+                        ProjectMetricText(label: "Cost", value: UsageFormatters.cost(item.estimatedCostMicros), accent: TerminalColors.amber)
+                        ProjectMetricText(label: "Sess", value: "\(item.sessionCount)", accent: TerminalColors.blue)
                     }
                 }
                 .padding(.horizontal, 8)
@@ -704,44 +700,41 @@ private struct SummaryPill: View {
     }
 }
 
-private struct DayMetricPill: View {
-    let label: String
-    let value: String
-    let accent: Color
+private struct DayMetricInline: View {
+    let bucket: UsageDayBucket
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.white.opacity(0.36))
-                .lineLimit(1)
-
-            Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(accent.opacity(0.92))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+        HStack(spacing: 6) {
+            ProjectMetricText(label: "Tok", value: UsageFormatters.compactTokens(bucket.totalTokens), accent: TerminalColors.green)
+            ProjectMetricText(label: "Cost", value: UsageFormatters.cost(bucket.estimatedCostMicros), accent: TerminalColors.amber)
+            ProjectMetricText(label: "Sess", value: "\(bucket.sessionCount)", accent: TerminalColors.blue)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 7)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.white.opacity(0.045))
         )
     }
 }
 
 private struct ProjectMetricText: View {
+    let label: String
     let value: String
     let accent: Color
 
     var body: some View {
-        Text(value)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundColor(accent.opacity(0.62))
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
+        HStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.white.opacity(0.26))
+            Text(value)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(accent.opacity(0.68))
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.68)
     }
 }
 

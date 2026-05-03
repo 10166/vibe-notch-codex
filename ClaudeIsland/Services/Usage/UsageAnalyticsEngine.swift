@@ -9,7 +9,7 @@ import Foundation
 import CryptoKit
 import SQLite3
 
-nonisolated private let usageParserVersion = 5
+nonisolated private let usageParserVersion = 7
 nonisolated private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor UsageAnalyticsEngine {
