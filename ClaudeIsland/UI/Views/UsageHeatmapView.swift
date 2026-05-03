@@ -288,55 +288,126 @@ struct UsageHeatmapView: View {
 
     @ViewBuilder
     private func modelBarChart(_ presentation: UsageHeatmapPresentation) -> some View {
-        if presentation.modelTotalValue > 0, !presentation.modelEntries.isEmpty {
-            modelBarChartContent(presentation)
+        let dailyData = presentation.dailyModelData
+        if !dailyData.isEmpty {
+            modelTrendChartContent(
+                dailyData: dailyData,
+                modelOrder: presentation.modelEntries.map(\.modelName),
+                modelEntries: presentation.modelEntries,
+                modelTotalValue: presentation.modelTotalValue
+            )
         }
     }
 
-    private func modelBarChartContent(_ presentation: UsageHeatmapPresentation) -> some View {
-        let entries = presentation.modelEntries
-        let maxValue = entries.map(\.value).max() ?? 1
+    private func modelTrendChartContent(dailyData: [ModelDailyEntry], modelOrder: [String], modelEntries: [ModelUsageEntry], modelTotalValue: Double) -> some View {
+        let maxValue = dailyData.map(\.totalValue).max() ?? 1
+        let chartHeight: CGFloat = 140
+        let yAxisW: CGFloat = 48
+        let xAxisHeight: CGFloat = 18
+        let barSpacing: CGFloat = 1
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             GeometryReader { geo in
-                HStack(alignment: .bottom, spacing: 6) {
-                    ForEach(entries) { entry in
-                        let heightRatio = CGFloat(entry.value / maxValue)
-                        VStack(spacing: 3) {
-                            Text(UsageFormatters.metricValue(entry.value, metric: metric))
-                                .font(.system(size: 8, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.6))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                let chartWidth = geo.size.width - yAxisW - 8
+                let barWidth = max(1, (chartWidth - barSpacing * CGFloat(max(dailyData.count - 1, 0))) / CGFloat(max(dailyData.count, 1)))
 
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(ModelColorMap.color(for: entry.modelName).opacity(0.82))
-                                .frame(height: max(4, heightRatio * geo.size.height - 14))
-                                .onHover { isHovered in
-                                    hoveredModelName = isHovered ? entry.modelName : nil
+                HStack(spacing: 0) {
+                    // Y-axis labels
+                    yAxisLabels(maxValue: maxValue, chartHeight: chartHeight - xAxisHeight, labelWidth: yAxisW)
+
+                    // Chart area
+                    ZStack(alignment: .bottomLeading) {
+                        // Grid lines + bars via Canvas
+                        Canvas { context, size in
+                            let drawHeight = size.height - xAxisHeight
+                            let drawWidth = size.width
+
+                            // Horizontal grid lines
+                            let gridLines = 4
+                            for i in 0...gridLines {
+                                let y = drawHeight * CGFloat(i) / CGFloat(gridLines)
+                                var gridPath = Path()
+                                gridPath.move(to: CGPoint(x: 0, y: y))
+                                gridPath.addLine(to: CGPoint(x: drawWidth, y: y))
+                                context.stroke(gridPath, with: .color(Color.white.opacity(0.06)), lineWidth: 0.5)
+                            }
+
+                            // Stacked bars
+                            for (dayIndex, day) in dailyData.enumerated() {
+                                let barX = CGFloat(dayIndex) * (barWidth + barSpacing)
+                                guard barX + barWidth > 0, barX < drawWidth else { continue }
+
+                                var yOffset: CGFloat = 0
+                                for modelName in modelOrder {
+                                    guard let value = day.modelValues[modelName], value > 0 else { continue }
+                                    let segHeight = CGFloat(value / maxValue) * drawHeight
+                                    let rect = CGRect(
+                                        x: barX,
+                                        y: drawHeight - yOffset - segHeight,
+                                        width: barWidth,
+                                        height: segHeight
+                                    )
+                                    let path = Path(roundedRect: rect, cornerRadius: barWidth > 3 ? 1.5 : 0)
+                                    context.fill(path, with: .color(ModelColorMap.color(for: modelName).opacity(0.82)))
+                                    yOffset += segHeight
                                 }
-
-                            Text(entry.displayName)
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(ModelColorMap.color(for: entry.modelName).opacity(0.9))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                                .frame(width: geo.size.width / CGFloat(entries.count) - 6)
+                            }
                         }
-                        .frame(maxWidth: .infinity)
+                        .frame(width: chartWidth, height: chartHeight - xAxisHeight)
+
+                        // X-axis date labels (sparse)
+                        HStack(spacing: 0) {
+                            let labelInterval = max(1, dailyData.count / 6)
+                            ForEach(Array(dailyData.enumerated()), id: \.offset) { index, day in
+                                if index % labelInterval == 0 {
+                                    Text(Self.shortDateFormatter.string(from: day.date))
+                                        .font(.system(size: 8, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.35))
+                                        .frame(width: CGFloat(labelInterval) * (barWidth + barSpacing), alignment: .leading)
+                                } else {
+                                    Color.clear
+                                        .frame(width: barWidth + barSpacing)
+                                }
+                            }
+                        }
+                        .frame(width: chartWidth, height: xAxisHeight)
+                        .offset(y: chartHeight - xAxisHeight)
                     }
+                    .frame(width: chartWidth, height: chartHeight)
                 }
             }
-            .frame(height: 120)
+            .frame(height: chartHeight)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.white.opacity(0.035))
             )
             .padding(.horizontal, heatmapPadding)
 
-            modelLegend(entries, total: presentation.modelTotalValue)
+            modelLegend(modelEntries, total: modelTotalValue)
         }
     }
+
+    private func yAxisLabels(maxValue: Double, chartHeight: CGFloat, labelWidth: CGFloat) -> some View {
+        let gridLines = 4
+        return VStack(spacing: 0) {
+            ForEach(0...gridLines, id: \.self) { i in
+                let value = maxValue * Double(gridLines - i) / Double(gridLines)
+                Text(UsageFormatters.metricValue(value, metric: metric))
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.35))
+                    .frame(width: labelWidth - 4, height: chartHeight / CGFloat(gridLines), alignment: .trailing)
+            }
+        }
+        .frame(width: labelWidth)
+    }
+
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "M/d"
+        return f
+    }()
 
     private func heatmap(_ presentation: UsageHeatmapPresentation) -> some View {
         GeometryReader { proxy in
@@ -542,6 +613,16 @@ struct UsageHeatmapView: View {
             .sorted { $0.value > $1.value }
         let modelTotalValue = modelEntries.reduce(0.0) { $0 + $1.value }
 
+        // Build per-date per-model data for trend chart
+        let dailyModelData: [ModelDailyEntry] = dayBuckets.compactMap { bucket in
+            let dayGroups = store.snapshot.dayGroups[bucket.localDate]?
+                .filter { agentFilter.includes($0.agent) } ?? []
+            guard !dayGroups.isEmpty else { return nil }
+            let modelValues = Dictionary(grouping: dayGroups, by: { $0.model ?? "unknown" })
+                .mapValues { groups in groups.reduce(0.0) { $0 + $1.value(for: metric) } }
+            return ModelDailyEntry(localDate: bucket.localDate, date: bucket.date, modelValues: modelValues)
+        }
+
         return UsageHeatmapPresentation(
             selectedDateKey: selectedDateKey,
             totalTokens: rangeSummary.totalTokens,
@@ -554,7 +635,8 @@ struct UsageHeatmapView: View {
             topProjects: Array(topProjects),
             breakdownItems: breakdownItems,
             modelEntries: modelEntries,
-            modelTotalValue: modelTotalValue
+            modelTotalValue: modelTotalValue,
+            dailyModelData: dailyModelData
         )
     }
 
@@ -683,6 +765,7 @@ private struct UsageHeatmapPresentation {
     let breakdownItems: [UsageBreakdownItem]
     let modelEntries: [ModelUsageEntry]
     let modelTotalValue: Double
+    let dailyModelData: [ModelDailyEntry]
 }
 
 private struct UsageBreakdownItem: Identifiable {
@@ -1001,6 +1084,13 @@ private struct ModelUsageEntry: Identifiable {
     let estimatedCostMicros: Int64?
     let sessionCount: Int
     var id: String { modelName }
+}
+
+private struct ModelDailyEntry {
+    let localDate: String
+    let date: Date
+    let modelValues: [String: Double]
+    var totalValue: Double { modelValues.values.reduce(0, +) }
 }
 
 private enum ModelColorMap {
