@@ -290,7 +290,7 @@ struct UsageHeatmapView: View {
                     .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
             } else {
                 projectBreakdown(presentation)
-                sessionList(presentation)
+                breakdownList(presentation)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -324,11 +324,11 @@ struct UsageHeatmapView: View {
         }
     }
 
-    private func sessionList(_ presentation: UsageHeatmapPresentation) -> some View {
+    private func breakdownList(_ presentation: UsageHeatmapPresentation) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 3) {
-                ForEach(presentation.selectedSessions.prefix(8)) { session in
-                    UsageSessionRow(session: session)
+                ForEach(presentation.breakdownItems) { item in
+                    UsageBreakdownRow(item: item)
                 }
             }
         }
@@ -372,6 +372,7 @@ struct UsageHeatmapView: View {
             .sorted { $0.endedAt > $1.endedAt }
         let topProjects = UsageAnalyticsAggregation.projectSummaries(from: selectedSessions)
             .prefix(3)
+        let breakdownItems = UsageBreakdownItem.make(from: selectedSessions)
 
         return UsageHeatmapPresentation(
             selectedDateKey: selectedDateKey,
@@ -383,7 +384,8 @@ struct UsageHeatmapView: View {
             maxMetricValue: max(dayBuckets.map { $0.value(for: metric) }.max() ?? 0, 1),
             selectedBucket: dayBuckets.first { $0.localDate == selectedDateKey } ?? emptyBucket(for: selectedDateKey),
             selectedSessions: selectedSessions,
-            topProjects: Array(topProjects)
+            topProjects: Array(topProjects),
+            breakdownItems: breakdownItems
         )
     }
 
@@ -542,6 +544,50 @@ private struct UsageHeatmapPresentation {
     let selectedBucket: UsageDayBucket
     let selectedSessions: [UsageSessionRecord]
     let topProjects: [UsageProjectUsageSummary]
+    let breakdownItems: [UsageBreakdownItem]
+}
+
+private struct UsageBreakdownItem: Identifiable {
+    let id: String
+    let agent: UsageAnalyticsAgent
+    let projectName: String
+    let model: String?
+    let isSidechain: Bool
+    let totalTokens: Int64
+    let estimatedCostMicros: Int64?
+    let sessionCount: Int
+
+    static func make(from sessions: [UsageSessionRecord]) -> [UsageBreakdownItem] {
+        let groups = Dictionary(grouping: sessions) { session in
+            "\(session.agent.rawValue)|\(session.projectName)|\(session.model ?? "")|\(session.isSidechain)"
+        }
+
+        return groups.map { key, groupedSessions in
+            let first = groupedSessions[0]
+            return UsageBreakdownItem(
+                id: key,
+                agent: first.agent,
+                projectName: first.projectName,
+                model: first.model,
+                isSidechain: first.isSidechain,
+                totalTokens: groupedSessions.reduce(0) { $0 + $1.totalTokens },
+                estimatedCostMicros: UsageAnalyticsAggregation.sumCostMicros(groupedSessions),
+                sessionCount: groupedSessions.count
+            )
+        }
+        .sorted {
+            switch ($0.estimatedCostMicros, $1.estimatedCostMicros) {
+            case let (lhs?, rhs?) where lhs != rhs:
+                return lhs > rhs
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return $0.totalTokens > $1.totalTokens
+            }
+        }
+    }
 }
 
 private struct UsageHeatmapMonthLabel: Identifiable {
@@ -726,7 +772,7 @@ private struct MetricValueCluster: View {
     var body: some View {
         HStack(spacing: 8) {
             metricText(UsageFormatters.compactTokens(tokens), color: TerminalColors.green)
-            metricText(UsageFormatters.cost(costMicros), color: TerminalColors.amber)
+            metricText(UsageDetailFormatters.cost(costMicros), color: TerminalColors.amber)
             metricText("\(sessions)", color: TerminalColors.blue)
         }
         .lineLimit(1)
@@ -740,29 +786,29 @@ private struct MetricValueCluster: View {
     }
 }
 
-private struct UsageSessionRow: View {
-    let session: UsageSessionRecord
+private struct UsageBreakdownRow: View {
+    let item: UsageBreakdownItem
 
     var body: some View {
         HStack(spacing: 8) {
-            AgentLogoIcon(kind: session.agent == .claude ? .claude : .codex, size: 13)
+            AgentLogoIcon(kind: item.agent == .claude ? .claude : .codex, size: 13)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(session.projectName)
+                    Text(item.projectName)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.white.opacity(0.78))
                         .lineLimit(1)
 
-                    if session.isSidechain {
+                    if item.isSidechain {
                         Text("Sub")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(.white.opacity(0.35))
                     }
                 }
 
-                Text(session.model ?? "Unknown model")
+                Text(item.model ?? "Unknown model")
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.32))
                     .lineLimit(1)
@@ -771,12 +817,16 @@ private struct UsageSessionRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 1) {
-                Text(UsageFormatters.compactTokens(session.totalTokens))
+                Text(UsageFormatters.compactTokens(item.totalTokens))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.62))
-                Text(UsageFormatters.cost(session.estimatedCostMicros))
+                    .foregroundColor(TerminalColors.green.opacity(0.68))
+                HStack(spacing: 6) {
+                    Text(UsageDetailFormatters.cost(item.estimatedCostMicros))
+                        .foregroundColor(TerminalColors.amber.opacity(0.62))
+                    Text("\(item.sessionCount)")
+                        .foregroundColor(TerminalColors.blue.opacity(0.68))
+                }
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.34))
             }
         }
         .padding(.horizontal, 8)
@@ -785,5 +835,12 @@ private struct UsageSessionRow: View {
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.white.opacity(0.035))
         )
+    }
+}
+
+private enum UsageDetailFormatters {
+    static func cost(_ micros: Int64?) -> String {
+        guard let micros else { return "--" }
+        return String(format: "$%.2f", Double(micros) / 1_000_000)
     }
 }
