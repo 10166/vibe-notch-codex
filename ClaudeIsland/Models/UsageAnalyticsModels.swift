@@ -28,7 +28,7 @@ nonisolated enum UsageAnalyticsAgent: String, CaseIterable, Identifiable, Sendab
     }
 }
 
-nonisolated enum UsageAnalyticsAgentFilter: String, CaseIterable, Identifiable {
+nonisolated enum UsageAnalyticsAgentFilter: String, CaseIterable, Identifiable, Sendable {
     case all
     case claude
     case codex
@@ -52,7 +52,7 @@ nonisolated enum UsageAnalyticsAgentFilter: String, CaseIterable, Identifiable {
     }
 }
 
-nonisolated enum UsageAnalyticsMetric: String, CaseIterable, Identifiable {
+nonisolated enum UsageAnalyticsMetric: String, CaseIterable, Identifiable, Sendable {
     case tokens
     case cost
     case sessions
@@ -68,7 +68,7 @@ nonisolated enum UsageAnalyticsMetric: String, CaseIterable, Identifiable {
     }
 }
 
-nonisolated enum UsageAnalyticsRange: String, CaseIterable, Identifiable {
+nonisolated enum UsageAnalyticsRange: String, CaseIterable, Identifiable, Sendable {
     case twelveWeeks
     case sixMonths
     case oneYear
@@ -162,18 +162,81 @@ nonisolated struct UsageProjectUsageSummary: Identifiable, Equatable, Sendable, 
     var id: String { name }
 }
 
+nonisolated struct UsageRangeSummary: Equatable, Sendable, UsageMetricAccessible {
+    var totalTokens: Int64
+    var estimatedCostMicros: Int64?
+    var sessionCount: Int
+
+    static let empty = UsageRangeSummary(
+        totalTokens: 0,
+        estimatedCostMicros: nil,
+        sessionCount: 0
+    )
+}
+
+nonisolated struct UsageDayGroupRecord: Identifiable, Equatable, Sendable, UsageMetricAccessible {
+    let localDate: String
+    let agent: UsageAnalyticsAgent
+    let projectName: String
+    let model: String?
+    let tokens: UsageTokenBreakdown
+    let estimatedCostMicros: Int64?
+    let sessionCount: Int
+    let isSidechain: Bool
+
+    var id: String {
+        "\(localDate)|\(agent.rawValue)|\(projectName)|\(model ?? "")|\(isSidechain)"
+    }
+
+    var totalTokens: Int64 { tokens.totalTokens }
+}
+
 nonisolated struct UsageAnalyticsSnapshot: Equatable, Sendable {
     var generatedAt: Date
     var days: [UsageDayBucket]
+    var claudeDays: [UsageDayBucket]
+    var codexDays: [UsageDayBucket]
+    var allSummary: UsageRangeSummary
+    var claudeSummary: UsageRangeSummary
+    var codexSummary: UsageRangeSummary
+    var dayGroups: [String: [UsageDayGroupRecord]]
     var sessions: [UsageSessionRecord]
     var scannedFileCount: Int
 
     static let empty = UsageAnalyticsSnapshot(
         generatedAt: Date(),
         days: [],
+        claudeDays: [],
+        codexDays: [],
+        allSummary: .empty,
+        claudeSummary: .empty,
+        codexSummary: .empty,
+        dayGroups: [:],
         sessions: [],
         scannedFileCount: 0
     )
+
+    func days(for filter: UsageAnalyticsAgentFilter) -> [UsageDayBucket] {
+        switch filter {
+        case .all: return days
+        case .claude: return claudeDays
+        case .codex: return codexDays
+        }
+    }
+
+    func summary(for filter: UsageAnalyticsAgentFilter) -> UsageRangeSummary {
+        switch filter {
+        case .all: return allSummary
+        case .claude: return claudeSummary
+        case .codex: return codexSummary
+        }
+    }
+
+    func groups(on localDate: String, for filter: UsageAnalyticsAgentFilter) -> [UsageDayGroupRecord] {
+        let groups = dayGroups[localDate] ?? []
+        guard filter != .all else { return groups }
+        return groups.filter { filter.includes($0.agent) }
+    }
 }
 
 nonisolated enum UsageAnalyticsAggregation {
@@ -200,6 +263,36 @@ nonisolated enum UsageAnalyticsAggregation {
         var found = false
         for session in sessions {
             if let cost = session.estimatedCostMicros {
+                total += cost
+                found = true
+            }
+        }
+        return found ? total : nil
+    }
+
+    static func projectSummaries(from groups: [UsageDayGroupRecord]) -> [UsageProjectUsageSummary] {
+        Dictionary(grouping: groups, by: \.projectName)
+            .map { projectName, projectGroups in
+                UsageProjectUsageSummary(
+                    name: projectName,
+                    totalTokens: projectGroups.reduce(0) { $0 + $1.totalTokens },
+                    estimatedCostMicros: sumCostMicros(projectGroups),
+                    sessionCount: projectGroups.reduce(0) { $0 + $1.sessionCount }
+                )
+            }
+            .sorted {
+                if $0.totalTokens == $1.totalTokens {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return $0.totalTokens > $1.totalTokens
+            }
+    }
+
+    static func sumCostMicros(_ groups: [UsageDayGroupRecord]) -> Int64? {
+        var total: Int64 = 0
+        var found = false
+        for group in groups {
+            if let cost = group.estimatedCostMicros {
                 total += cost
                 found = true
             }

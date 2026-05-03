@@ -201,20 +201,15 @@ struct UsageHeatmapView: View {
                     HStack(alignment: .top, spacing: heatmapLabelSpacing) {
                         weekdayLabels(cellSize: cellSize)
 
-                        HStack(alignment: .top, spacing: cellSpacing) {
-                            ForEach(Array(weeks.enumerated()), id: \.offset) { weekIndex, days in
-                                UsageHeatmapWeekColumn(
-                                    weekIndex: weekIndex,
-                                    days: days,
-                                    metric: metric,
-                                    maxValue: presentation.maxMetricValue,
-                                    selectedDateKey: $selectedDateKey,
-                                    hoveredCell: $hoveredCell,
-                                    cellSize: cellSize,
-                                    cellSpacing: cellSpacing
-                                )
-                            }
-                        }
+                        UsageHeatmapCanvasGrid(
+                            weekColumns: weeks,
+                            metric: metric,
+                            maxValue: presentation.maxMetricValue,
+                            selectedDateKey: $selectedDateKey,
+                            hoveredCell: $hoveredCell,
+                            cellSize: cellSize,
+                            cellSpacing: cellSpacing
+                        )
                         .frame(width: gridWidth, height: gridHeight, alignment: .topLeading)
                     }
                 }
@@ -283,8 +278,8 @@ struct UsageHeatmapView: View {
                 DayMetricInline(bucket: presentation.selectedBucket)
             }
 
-            if presentation.selectedSessions.isEmpty {
-                Text(store.snapshot.sessions.isEmpty ? "No usage data yet" : "No sessions on this day")
+            if presentation.breakdownItems.isEmpty {
+                Text(presentation.totalSessions == 0 ? "No usage data yet" : "No sessions on this day")
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.35))
                     .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
@@ -364,61 +359,26 @@ struct UsageHeatmapView: View {
     }
 
     private func makePresentation() -> UsageHeatmapPresentation {
-        let filteredSessions = store.snapshot.sessions.filter { agentFilter.includes($0.agent) }
-        let dayBuckets = makeDayBuckets(baseDays: store.snapshot.days, filteredSessions: filteredSessions)
+        let dayBuckets = store.snapshot.days(for: agentFilter)
         let weekColumns = makeWeekColumns(dayBuckets)
-        let selectedSessions = filteredSessions
-            .filter { $0.localDate == selectedDateKey }
-            .sorted { $0.endedAt > $1.endedAt }
-        let topProjects = UsageAnalyticsAggregation.projectSummaries(from: selectedSessions)
+        let rangeSummary = store.snapshot.summary(for: agentFilter)
+        let selectedGroups = store.snapshot.groups(on: selectedDateKey, for: agentFilter)
+        let topProjects = UsageAnalyticsAggregation.projectSummaries(from: selectedGroups)
             .prefix(3)
-        let breakdownItems = UsageBreakdownItem.make(from: selectedSessions)
+        let breakdownItems = UsageBreakdownItem.make(from: selectedGroups)
 
         return UsageHeatmapPresentation(
             selectedDateKey: selectedDateKey,
-            totalTokens: filteredSessions.reduce(0) { $0 + $1.totalTokens },
-            totalCostMicros: UsageAnalyticsAggregation.sumCostMicros(filteredSessions),
-            totalSessions: filteredSessions.count,
+            totalTokens: rangeSummary.totalTokens,
+            totalCostMicros: rangeSummary.estimatedCostMicros,
+            totalSessions: rangeSummary.sessionCount,
             weekColumns: weekColumns,
             monthLabels: makeMonthLabels(weekColumns),
             maxMetricValue: max(dayBuckets.map { $0.value(for: metric) }.max() ?? 0, 1),
             selectedBucket: dayBuckets.first { $0.localDate == selectedDateKey } ?? emptyBucket(for: selectedDateKey),
-            selectedSessions: selectedSessions,
             topProjects: Array(topProjects),
             breakdownItems: breakdownItems
         )
-    }
-
-    private func makeDayBuckets(baseDays: [UsageDayBucket], filteredSessions: [UsageSessionRecord]) -> [UsageDayBucket] {
-        guard agentFilter != .all else { return baseDays }
-
-        var byDate: [String: UsageDayBucket] = Dictionary(uniqueKeysWithValues: baseDays.map {
-            ($0.localDate, UsageDayBucket(
-                localDate: $0.localDate,
-                date: $0.date,
-                inputTokens: 0,
-                outputTokens: 0,
-                cacheReadTokens: 0,
-                cacheCreationTokens: 0,
-                estimatedCostMicros: nil,
-                sessionCount: 0
-            ))
-        })
-
-        for session in filteredSessions {
-            guard var bucket = byDate[session.localDate] else { continue }
-            bucket.inputTokens += session.tokens.inputTokens
-            bucket.outputTokens += session.tokens.outputTokens
-            bucket.cacheReadTokens += session.tokens.cacheReadTokens
-            bucket.cacheCreationTokens += session.tokens.cacheCreationTokens
-            bucket.sessionCount += 1
-            if let cost = session.estimatedCostMicros {
-                bucket.estimatedCostMicros = (bucket.estimatedCostMicros ?? 0) + cost
-            }
-            byDate[session.localDate] = bucket
-        }
-
-        return baseDays.compactMap { byDate[$0.localDate] }
     }
 
     private func makeWeekColumns(_ dayBuckets: [UsageDayBucket]) -> [[UsageDayBucket?]] {
@@ -542,7 +502,6 @@ private struct UsageHeatmapPresentation {
     let monthLabels: [UsageHeatmapMonthLabel]
     let maxMetricValue: Double
     let selectedBucket: UsageDayBucket
-    let selectedSessions: [UsageSessionRecord]
     let topProjects: [UsageProjectUsageSummary]
     let breakdownItems: [UsageBreakdownItem]
 }
@@ -557,22 +516,17 @@ private struct UsageBreakdownItem: Identifiable {
     let estimatedCostMicros: Int64?
     let sessionCount: Int
 
-    static func make(from sessions: [UsageSessionRecord]) -> [UsageBreakdownItem] {
-        let groups = Dictionary(grouping: sessions) { session in
-            "\(session.agent.rawValue)|\(session.projectName)|\(session.model ?? "")|\(session.isSidechain)"
-        }
-
-        return groups.map { key, groupedSessions in
-            let first = groupedSessions[0]
-            return UsageBreakdownItem(
-                id: key,
-                agent: first.agent,
-                projectName: first.projectName,
-                model: first.model,
-                isSidechain: first.isSidechain,
-                totalTokens: groupedSessions.reduce(0) { $0 + $1.totalTokens },
-                estimatedCostMicros: UsageAnalyticsAggregation.sumCostMicros(groupedSessions),
-                sessionCount: groupedSessions.count
+    static func make(from groups: [UsageDayGroupRecord]) -> [UsageBreakdownItem] {
+        groups.map { group in
+            UsageBreakdownItem(
+                id: group.id,
+                agent: group.agent,
+                projectName: group.projectName,
+                model: group.model,
+                isSidechain: group.isSidechain,
+                totalTokens: group.totalTokens,
+                estimatedCostMicros: group.estimatedCostMicros,
+                sessionCount: group.sessionCount
             )
         }
         .sorted {
@@ -603,9 +557,8 @@ private struct UsageHeatmapHover: Equatable {
     let day: UsageDayBucket
 }
 
-private struct UsageHeatmapWeekColumn: View {
-    let weekIndex: Int
-    let days: [UsageDayBucket?]
+private struct UsageHeatmapCanvasGrid: View {
+    let weekColumns: [[UsageDayBucket?]]
     let metric: UsageAnalyticsMetric
     let maxValue: Double
     @Binding var selectedDateKey: String
@@ -614,33 +567,92 @@ private struct UsageHeatmapWeekColumn: View {
     let cellSpacing: CGFloat
 
     var body: some View {
-        VStack(spacing: cellSpacing) {
-            ForEach(0..<7, id: \.self) { dayIndex in
-                cell(for: dayIndex)
+        Canvas { context, _ in
+            for (weekIndex, days) in weekColumns.enumerated() {
+                for dayIndex in 0..<7 {
+                    guard dayIndex < days.count, let day = days[dayIndex] else {
+                        continue
+                    }
+
+                    let rect = CGRect(
+                        x: CGFloat(weekIndex) * (cellSize + cellSpacing),
+                        y: CGFloat(dayIndex) * (cellSize + cellSpacing),
+                        width: cellSize,
+                        height: cellSize
+                    )
+                    let path = Path(roundedRect: rect, cornerRadius: 2.5)
+                    context.fill(path, with: .color(fillColor(for: day)))
+                    context.stroke(
+                        path,
+                        with: .color(strokeColor(for: day)),
+                        lineWidth: day.localDate == selectedDateKey ? 1.2 : 0.5
+                    )
+                }
             }
+        }
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case let .active(location):
+                hoveredCell = hitCell(at: location)
+            case .ended:
+                hoveredCell = nil
+            }
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onEnded { value in
+                    guard let hit = hitCell(at: value.location) else { return }
+                    selectedDateKey = hit.day.localDate
+                }
+        )
+    }
+
+    private func hitCell(at location: CGPoint) -> UsageHeatmapHover? {
+        guard location.x >= 0, location.y >= 0 else { return nil }
+        let pitch = cellSize + cellSpacing
+        guard pitch > 0 else { return nil }
+
+        let weekIndex = Int(location.x / pitch)
+        let dayIndex = Int(location.y / pitch)
+        guard weekIndex >= 0,
+              weekIndex < weekColumns.count,
+              dayIndex >= 0,
+              dayIndex < 7 else {
+            return nil
+        }
+
+        let localX = location.x - CGFloat(weekIndex) * pitch
+        let localY = location.y - CGFloat(dayIndex) * pitch
+        guard localX <= cellSize, localY <= cellSize,
+              dayIndex < weekColumns[weekIndex].count,
+              let day = weekColumns[weekIndex][dayIndex] else {
+            return nil
+        }
+
+        return UsageHeatmapHover(weekIndex: weekIndex, dayIndex: dayIndex, day: day)
+    }
+
+    private func fillColor(for day: UsageDayBucket) -> Color {
+        let value = day.value(for: metric)
+        guard value > 0 else {
+            return Color.white.opacity(0.055)
+        }
+
+        let normalized = min(max(value / maxValue, 0), 1)
+        let opacity = 0.22 + normalized * 0.7
+        switch metric {
+        case .tokens:
+            return TerminalColors.green.opacity(opacity)
+        case .cost:
+            return TerminalColors.amber.opacity(opacity)
+        case .sessions:
+            return TerminalColors.blue.opacity(opacity)
         }
     }
 
-    @ViewBuilder
-    private func cell(for index: Int) -> some View {
-        if index < days.count, let day = days[index] {
-            UsageHeatmapCell(
-                day: day,
-                metric: metric,
-                maxValue: maxValue,
-                isSelected: day.localDate == selectedDateKey
-            ) {
-                selectedDateKey = day.localDate
-            }
-            .onHover { hovering in
-                hoveredCell = hovering
-                    ? UsageHeatmapHover(weekIndex: weekIndex, dayIndex: index, day: day)
-                    : nil
-            }
-            .frame(width: cellSize, height: cellSize)
-        } else {
-            Color.clear.frame(width: cellSize, height: cellSize)
-        }
+    private func strokeColor(for day: UsageDayBucket) -> Color {
+        day.localDate == selectedDateKey ? Color.white.opacity(0.75) : Color.white.opacity(0.08)
     }
 }
 
@@ -677,49 +689,6 @@ private struct UsageHeatmapHoverTooltip: View {
         formatter.dateFormat = "MMM d, yyyy"
         return formatter
     }()
-}
-
-private struct UsageHeatmapCell: View {
-    let day: UsageDayBucket
-    let metric: UsageAnalyticsMetric
-    let maxValue: Double
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            RoundedRectangle(cornerRadius: 2.5)
-                .fill(fillColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2.5)
-                        .stroke(isSelected ? Color.white.opacity(0.75) : Color.white.opacity(0.08), lineWidth: isSelected ? 1.2 : 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(helpText)
-    }
-
-    private var fillColor: Color {
-        let value = day.value(for: metric)
-        guard value > 0 else {
-            return Color.white.opacity(0.055)
-        }
-
-        let normalized = min(max(value / maxValue, 0), 1)
-        let opacity = 0.22 + normalized * 0.7
-        switch metric {
-        case .tokens:
-            return TerminalColors.green.opacity(opacity)
-        case .cost:
-            return TerminalColors.amber.opacity(opacity)
-        case .sessions:
-            return TerminalColors.blue.opacity(opacity)
-        }
-    }
-
-    private var helpText: String {
-        "\(day.localDate) · \(UsageFormatters.compactTokens(day.totalTokens)) tokens · \(UsageFormatters.cost(day.estimatedCostMicros)) · \(day.sessionCount) sessions"
-    }
 }
 
 private struct SummaryPill: View {

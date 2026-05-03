@@ -36,12 +36,19 @@ actor UsageAnalyticsEngine {
         pruneMissingSessions(agent: .codex, seenPathHashes: codexResult.seenPathHashes, db: db)
         rebuildDailyTable(db)
 
-        let days = loadDays(range: range, db: db)
-        let sessions = loadSessions(range: range, db: db)
+        let days = loadDays(range: range, agent: nil, db: db)
+        let claudeDays = loadDays(range: range, agent: .claude, db: db)
+        let codexDays = loadDays(range: range, agent: .codex, db: db)
         return UsageAnalyticsSnapshot(
             generatedAt: Date(),
             days: days,
-            sessions: sessions,
+            claudeDays: claudeDays,
+            codexDays: codexDays,
+            allSummary: loadRangeSummary(range: range, agent: nil, db: db),
+            claudeSummary: loadRangeSummary(range: range, agent: .claude, db: db),
+            codexSummary: loadRangeSummary(range: range, agent: .codex, db: db),
+            dayGroups: loadDayGroups(range: range, db: db),
+            sessions: [],
             scannedFileCount: claudeResult.scannedCount + codexResult.scannedCount
         )
     }
@@ -70,6 +77,8 @@ actor UsageAnalyticsEngine {
     }
 
     private func ensureSchema(_ db: OpaquePointer?) {
+        sqlite3_exec(db, "DROP TABLE IF EXISTS usage_daily", nil, nil, nil)
+
         let statements = [
             """
             CREATE TABLE IF NOT EXISTS usage_file_index (
@@ -108,13 +117,14 @@ actor UsageAnalyticsEngine {
                 agent TEXT NOT NULL,
                 project_name TEXT NOT NULL,
                 model TEXT,
+                is_sidechain INTEGER NOT NULL,
                 input_tokens INTEGER NOT NULL,
                 output_tokens INTEGER NOT NULL,
                 cache_read_tokens INTEGER NOT NULL,
                 cache_creation_tokens INTEGER NOT NULL,
                 session_count INTEGER NOT NULL,
                 estimated_cost_micros INTEGER,
-                PRIMARY KEY (local_date, agent, project_name, model)
+                PRIMARY KEY (local_date, agent, project_name, model, is_sidechain)
             )
             """
         ]
@@ -122,6 +132,8 @@ actor UsageAnalyticsEngine {
         for statement in statements {
             sqlite3_exec(db, statement, nil, nil, nil)
         }
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_sessions_local_date_agent_idx ON usage_sessions(local_date, agent)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_daily_local_date_agent_idx ON usage_daily(local_date, agent)", nil, nil, nil)
         sqlite3_exec(db, "UPDATE usage_file_index SET source_path = path_hash WHERE source_path LIKE '/%'", nil, nil, nil)
     }
 
@@ -264,19 +276,19 @@ actor UsageAnalyticsEngine {
         sqlite3_exec(db, "DELETE FROM usage_daily", nil, nil, nil)
         let sql = """
         INSERT INTO usage_daily
-        (local_date, agent, project_name, model, input_tokens, output_tokens, cache_read_tokens,
-         cache_creation_tokens, session_count, estimated_cost_micros)
-        SELECT local_date, agent, project_name, model,
+        (local_date, agent, project_name, model, is_sidechain, input_tokens, output_tokens,
+         cache_read_tokens, cache_creation_tokens, session_count, estimated_cost_micros)
+        SELECT local_date, agent, project_name, model, is_sidechain,
                SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
                SUM(cache_creation_tokens), SUM(session_count), SUM(estimated_cost_micros)
         FROM usage_sessions
-        GROUP BY local_date, agent, project_name, model
+        GROUP BY local_date, agent, project_name, model, is_sidechain
         """
         sqlite3_exec(db, sql, nil, nil, nil)
     }
 
-    private func loadDays(range: UsageAnalyticsRange, db: OpaquePointer?) -> [UsageDayBucket] {
-        let startDate = calendar.startOfDay(for: Date()).addingTimeInterval(TimeInterval(-(range.dayCount - 1) * 24 * 60 * 60))
+    private func loadDays(range: UsageAnalyticsRange, agent: UsageAnalyticsAgent?, db: OpaquePointer?) -> [UsageDayBucket] {
+        let startDate = startDate(for: range)
         let startKey = UsageLogParser.localDateString(for: startDate)
         var bucketsByDate: [String: UsageDayBucket] = [:]
 
@@ -284,11 +296,13 @@ actor UsageAnalyticsEngine {
         SELECT local_date, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
                SUM(cache_creation_tokens), SUM(estimated_cost_micros), SUM(session_count)
         FROM usage_daily
-        WHERE local_date >= ?
+        WHERE local_date >= ? AND (? IS NULL OR agent = ?)
         GROUP BY local_date
         """
         withStatement(db, sql) { statement in
             bindText(statement, 1, startKey)
+            bindOptionalText(statement, 2, agent?.rawValue)
+            bindOptionalText(statement, 3, agent?.rawValue)
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let localDate = columnText(statement, 0),
                       let date = UsageLogParser.date(fromLocalDate: localDate) else {
@@ -325,55 +339,82 @@ actor UsageAnalyticsEngine {
         }
     }
 
-    private func loadSessions(range: UsageAnalyticsRange, db: OpaquePointer?) -> [UsageSessionRecord] {
-        let startDate = calendar.startOfDay(for: Date()).addingTimeInterval(TimeInterval(-(range.dayCount - 1) * 24 * 60 * 60))
-        let startKey = UsageLogParser.localDateString(for: startDate)
-        var sessions: [UsageSessionRecord] = []
+    private func loadRangeSummary(range: UsageAnalyticsRange, agent: UsageAnalyticsAgent?, db: OpaquePointer?) -> UsageRangeSummary {
+        let startKey = UsageLogParser.localDateString(for: startDate(for: range))
+        let sql = """
+        SELECT SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
+               SUM(cache_creation_tokens), SUM(estimated_cost_micros), SUM(session_count)
+        FROM usage_daily
+        WHERE local_date >= ? AND (? IS NULL OR agent = ?)
+        """
+        var summary = UsageRangeSummary.empty
+        withStatement(db, sql) { statement in
+            bindText(statement, 1, startKey)
+            bindOptionalText(statement, 2, agent?.rawValue)
+            bindOptionalText(statement, 3, agent?.rawValue)
+            guard sqlite3_step(statement) == SQLITE_ROW else { return }
+            let tokens = UsageTokenBreakdown(
+                inputTokens: sqlite3_column_int64(statement, 0),
+                outputTokens: sqlite3_column_int64(statement, 1),
+                cacheReadTokens: sqlite3_column_int64(statement, 2),
+                cacheCreationTokens: sqlite3_column_int64(statement, 3)
+            )
+            summary = UsageRangeSummary(
+                totalTokens: tokens.totalTokens,
+                estimatedCostMicros: optionalColumnInt64(statement, 4),
+                sessionCount: Int(sqlite3_column_int(statement, 5))
+            )
+        }
+        return summary
+    }
+
+    private func loadDayGroups(range: UsageAnalyticsRange, db: OpaquePointer?) -> [String: [UsageDayGroupRecord]] {
+        let startKey = UsageLogParser.localDateString(for: startDate(for: range))
+        var groupsByDate: [String: [UsageDayGroupRecord]] = [:]
 
         let sql = """
-        SELECT session_id, file_path_hash, agent, project_name, cwd_hash, started_at, ended_at, local_date,
-               model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-               estimated_cost_micros, is_sidechain
-        FROM usage_sessions
+        SELECT local_date, agent, project_name, model, is_sidechain,
+               input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+               estimated_cost_micros, session_count
+        FROM usage_daily
         WHERE local_date >= ?
-        ORDER BY ended_at DESC
+        ORDER BY local_date DESC, estimated_cost_micros DESC, input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens DESC
         """
         withStatement(db, sql) { statement in
             bindText(statement, 1, startKey)
             while sqlite3_step(statement) == SQLITE_ROW {
-                guard let sessionId = columnText(statement, 0),
-                      let filePathHash = columnText(statement, 1),
-                      let agentRaw = columnText(statement, 2),
+                guard let localDate = columnText(statement, 0),
+                      let agentRaw = columnText(statement, 1),
                       let agent = UsageAnalyticsAgent(rawValue: agentRaw),
-                      let projectName = columnText(statement, 3),
-                      let cwdHash = columnText(statement, 4),
-                      let localDate = columnText(statement, 7) else {
+                      let projectName = columnText(statement, 2) else {
                     continue
                 }
 
-                sessions.append(UsageSessionRecord(
-                    id: "\(sessionId)-\(filePathHash)",
-                    sessionId: sessionId,
+                let group = UsageDayGroupRecord(
+                    localDate: localDate,
                     agent: agent,
                     projectName: projectName,
-                    cwdHash: cwdHash,
-                    startedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 5)),
-                    endedAt: Date(timeIntervalSince1970: sqlite3_column_double(statement, 6)),
-                    localDate: localDate,
-                    model: columnText(statement, 8),
+                    model: columnText(statement, 3),
                     tokens: UsageTokenBreakdown(
-                        inputTokens: sqlite3_column_int64(statement, 9),
-                        outputTokens: sqlite3_column_int64(statement, 10),
-                        cacheReadTokens: sqlite3_column_int64(statement, 11),
-                        cacheCreationTokens: sqlite3_column_int64(statement, 12)
+                        inputTokens: sqlite3_column_int64(statement, 5),
+                        outputTokens: sqlite3_column_int64(statement, 6),
+                        cacheReadTokens: sqlite3_column_int64(statement, 7),
+                        cacheCreationTokens: sqlite3_column_int64(statement, 8)
                     ),
-                    estimatedCostMicros: optionalColumnInt64(statement, 13),
-                    isSidechain: sqlite3_column_int(statement, 14) == 1
-                ))
+                    estimatedCostMicros: optionalColumnInt64(statement, 9),
+                    sessionCount: Int(sqlite3_column_int(statement, 10)),
+                    isSidechain: sqlite3_column_int(statement, 4) == 1
+                )
+                groupsByDate[localDate, default: []].append(group)
             }
         }
-        return sessions
+        return groupsByDate
     }
+
+    private func startDate(for range: UsageAnalyticsRange) -> Date {
+        calendar.startOfDay(for: Date()).addingTimeInterval(TimeInterval(-(range.dayCount - 1) * 24 * 60 * 60))
+    }
+
 }
 
 nonisolated private enum UsageLogParser {
