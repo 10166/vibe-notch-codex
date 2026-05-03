@@ -16,6 +16,8 @@ struct UsageHeatmapView: View {
     @State private var range: UsageAnalyticsRange = .twelveWeeks
     @State private var selectedDateKey: String = UsageHeatmapView.todayKey()
     @State private var hoveredCell: UsageHeatmapHover?
+    @State private var hoveredModelName: String?
+    @State private var chartMode: UsageChartMode = .heatmap
 
     private let maxCellSize: CGFloat = 11
     private let minCellSize: CGFloat = 5
@@ -37,7 +39,7 @@ struct UsageHeatmapView: View {
             header
             controls
             summaryStrip(presentation)
-            heatmap(presentation)
+            chartContent(presentation)
             dayDetail(presentation)
         }
         .padding(.horizontal, 8)
@@ -108,6 +110,11 @@ struct UsageHeatmapView: View {
                 controlLabel("Metric")
                 metricPicker
                     .frame(width: primaryControlWidth)
+                Spacer()
+                    .frame(width: 14)
+                controlLabel("Chart")
+                chartModePicker
+                    .frame(width: rangeControlWidth)
                 Spacer(minLength: 0)
             }
 
@@ -163,6 +170,30 @@ struct UsageHeatmapView: View {
         .labelsHidden()
     }
 
+    private var chartModePicker: some View {
+        Picker(selection: $chartMode) {
+            ForEach(UsageChartMode.allCases) { item in
+                Text(item.displayName).tag(item)
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    @ViewBuilder
+    private func chartContent(_ presentation: UsageHeatmapPresentation) -> some View {
+        switch chartMode {
+        case .heatmap:
+            heatmap(presentation)
+        case .stackedBar:
+            modelDistributionBar(presentation)
+        case .barChart:
+            modelBarChart(presentation)
+        }
+    }
+
     private func controlLabel(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 12, weight: .medium))
@@ -177,6 +208,133 @@ struct UsageHeatmapView: View {
             SummaryPill(label: "Tokens", value: UsageFormatters.compactTokens(presentation.totalTokens), accent: TerminalColors.green)
             SummaryPill(label: "Cost", value: UsageFormatters.cost(presentation.totalCostMicros), accent: TerminalColors.amber)
             SummaryPill(label: "Sessions", value: "\(presentation.totalSessions)", accent: TerminalColors.blue)
+        }
+    }
+
+    @ViewBuilder
+    private func modelDistributionBar(_ presentation: UsageHeatmapPresentation) -> some View {
+        if presentation.modelTotalValue > 0, !presentation.modelEntries.isEmpty {
+            modelDistributionBarContent(presentation)
+        }
+    }
+
+    private func modelDistributionBarContent(_ presentation: UsageHeatmapPresentation) -> some View {
+        let entries = presentation.modelEntries
+        let total = presentation.modelTotalValue
+
+        return VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { proxy in
+                ZStack(alignment: .center) {
+                    HStack(spacing: 1.5) {
+                        ForEach(entries) { entry in
+                            let fraction = entry.value / total
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(ModelColorMap.color(for: entry.modelName).opacity(0.82))
+                                .frame(width: max(2, proxy.size.width * CGFloat(fraction)))
+                                .onHover { isHovered in
+                                    hoveredModelName = isHovered ? entry.modelName : nil
+                                }
+                        }
+                    }
+                    .frame(height: 18, alignment: .leading)
+
+                    if let hovered = hoveredModelName,
+                       let entry = entries.first(where: { $0.modelName == hovered }) {
+                        let pct = total > 0 ? entry.value / total * 100 : 0
+                        Text("\(entry.displayName)  \(UsageFormatters.metricValue(entry.value, metric: metric))  \(String(format: "%.0f%%", pct))")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(Color.black.opacity(0.88))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .stroke(Color.white.opacity(0.14), lineWidth: 0.5)
+                                    )
+                            )
+                            .shadow(color: .black.opacity(0.45), radius: 4, y: 2)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+            .frame(height: 18)
+
+            modelLegend(entries, total: total)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func modelLegend(_ entries: [ModelUsageEntry], total: Double) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(entries.prefix(8))) { entry in
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(ModelColorMap.color(for: entry.modelName))
+                            .frame(width: 6, height: 6)
+                        Text(entry.displayName)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .frame(height: 14)
+    }
+
+    @ViewBuilder
+    private func modelBarChart(_ presentation: UsageHeatmapPresentation) -> some View {
+        if presentation.modelTotalValue > 0, !presentation.modelEntries.isEmpty {
+            modelBarChartContent(presentation)
+        }
+    }
+
+    private func modelBarChartContent(_ presentation: UsageHeatmapPresentation) -> some View {
+        let entries = presentation.modelEntries
+        let maxValue = entries.map(\.value).max() ?? 1
+
+        return VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(entries) { entry in
+                        let heightRatio = CGFloat(entry.value / maxValue)
+                        VStack(spacing: 3) {
+                            Text(UsageFormatters.metricValue(entry.value, metric: metric))
+                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.6))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(ModelColorMap.color(for: entry.modelName).opacity(0.82))
+                                .frame(height: max(4, heightRatio * geo.size.height - 14))
+                                .onHover { isHovered in
+                                    hoveredModelName = isHovered ? entry.modelName : nil
+                                }
+
+                            Text(entry.displayName)
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(ModelColorMap.color(for: entry.modelName).opacity(0.9))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                                .frame(width: geo.size.width / CGFloat(entries.count) - 6)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .frame(height: 120)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.035))
+            )
+            .padding(.horizontal, heatmapPadding)
+
+            modelLegend(entries, total: presentation.modelTotalValue)
         }
     }
 
@@ -367,6 +525,23 @@ struct UsageHeatmapView: View {
             .prefix(3)
         let breakdownItems = UsageBreakdownItem.make(from: selectedGroups)
 
+        let allGroups = store.snapshot.dayGroups.values
+            .flatMap { $0 }
+            .filter { agentFilter.includes($0.agent) }
+        let modelEntries = Dictionary(grouping: allGroups) { $0.model ?? "unknown" }
+            .map { modelName, groups -> ModelUsageEntry in
+                ModelUsageEntry(
+                    modelName: modelName,
+                    displayName: modelName,
+                    value: groups.reduce(0.0) { $0 + $1.value(for: metric) },
+                    totalTokens: groups.reduce(0) { $0 + $1.totalTokens },
+                    estimatedCostMicros: UsageAnalyticsAggregation.sumCostMicros(groups),
+                    sessionCount: groups.reduce(0) { $0 + $1.sessionCount }
+                )
+            }
+            .sorted { $0.value > $1.value }
+        let modelTotalValue = modelEntries.reduce(0.0) { $0 + $1.value }
+
         return UsageHeatmapPresentation(
             selectedDateKey: selectedDateKey,
             totalTokens: rangeSummary.totalTokens,
@@ -377,7 +552,9 @@ struct UsageHeatmapView: View {
             maxMetricValue: max(dayBuckets.map { $0.value(for: metric) }.max() ?? 0, 1),
             selectedBucket: dayBuckets.first { $0.localDate == selectedDateKey } ?? emptyBucket(for: selectedDateKey),
             topProjects: Array(topProjects),
-            breakdownItems: breakdownItems
+            breakdownItems: breakdownItems,
+            modelEntries: modelEntries,
+            modelTotalValue: modelTotalValue
         )
     }
 
@@ -504,6 +681,8 @@ private struct UsageHeatmapPresentation {
     let selectedBucket: UsageDayBucket
     let topProjects: [UsageProjectUsageSummary]
     let breakdownItems: [UsageBreakdownItem]
+    let modelEntries: [ModelUsageEntry]
+    let modelTotalValue: Double
 }
 
 private struct UsageBreakdownItem: Identifiable {
@@ -811,5 +990,62 @@ private enum UsageDetailFormatters {
     static func cost(_ micros: Int64?) -> String {
         guard let micros else { return "--" }
         return String(format: "$%.2f", Double(micros) / 1_000_000)
+    }
+}
+
+private struct ModelUsageEntry: Identifiable {
+    let modelName: String
+    let displayName: String
+    let value: Double
+    let totalTokens: Int64
+    let estimatedCostMicros: Int64?
+    let sessionCount: Int
+    var id: String { modelName }
+}
+
+private enum ModelColorMap {
+    static func color(for modelName: String) -> Color {
+        let lower = modelName.lowercased()
+
+        if lower.contains("opus") { return TerminalColors.magenta }
+        if lower.contains("sonnet") { return TerminalColors.blue }
+        if lower.contains("haiku") { return TerminalColors.green }
+        if lower.contains("gpt") { return TerminalColors.cyan }
+        if lower.contains("deepseek") { return TerminalColors.amber }
+        if lower.contains("glm") { return TerminalColors.prompt }
+        if lower.contains("qwen") { return Color(red: 0.6, green: 0.4, blue: 0.9) }
+        if lower.contains("kimi") { return Color(red: 0.95, green: 0.6, blue: 0.3) }
+        if lower.contains("minimax") { return Color(red: 0.3, green: 0.75, blue: 0.65) }
+
+        return fallbackColor(for: modelName)
+    }
+
+    private static let fallbackPalette: [Color] = [
+        Color(red: 0.7, green: 0.5, blue: 0.3),
+        Color(red: 0.5, green: 0.7, blue: 0.3),
+        Color(red: 0.3, green: 0.5, blue: 0.7),
+        Color(red: 0.7, green: 0.3, blue: 0.5),
+        Color(red: 0.3, green: 0.7, blue: 0.7),
+    ]
+
+    private static func fallbackColor(for name: String) -> Color {
+        let index = abs(name.hashValue) % fallbackPalette.count
+        return fallbackPalette[index]
+    }
+}
+
+private enum UsageChartMode: String, CaseIterable, Identifiable {
+    case heatmap
+    case stackedBar
+    case barChart
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .heatmap: return "Heatmap"
+        case .stackedBar: return "Stack"
+        case .barChart: return "Bars"
+        }
     }
 }
