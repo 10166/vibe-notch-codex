@@ -27,6 +27,7 @@ struct UsageHeatmapView: View {
     private let monthGridSpacing: CGFloat = 4
     private let hoverTooltipWidth: CGFloat = 112
     private let hoverTooltipHeight: CGFloat = 28
+    private let controlLabelWidth: CGFloat = 48
 
     var body: some View {
         let presentation = makePresentation()
@@ -101,63 +102,71 @@ struct UsageHeatmapView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 6) {
-            controlGroup("Metric") {
-                Picker(selection: $metric) {
-                    ForEach(UsageAnalyticsMetric.allCases) { item in
-                        Text(item.displayName).tag(item)
-                    }
-                } label: {
-                    EmptyView()
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 216)
+            HStack(spacing: 8) {
+                controlLabel("Metric")
+                metricPicker
+                    .frame(width: 216)
+                Spacer(minLength: 0)
             }
 
             HStack(spacing: 12) {
-                controlGroup("Agent") {
-                    Picker(selection: $agentFilter) {
-                        ForEach(UsageAnalyticsAgentFilter.allCases) { item in
-                            Text(item.displayName).tag(item)
-                        }
-                    } label: {
-                        EmptyView()
-                    }
-                    .pickerStyle(.segmented)
+                controlLabel("Agent")
+                agentPicker
                     .frame(width: 174)
-                }
 
-                controlGroup("Range") {
-                    Picker(selection: $range) {
-                        ForEach(UsageAnalyticsRange.allCases) { item in
-                            Text(item.displayName).tag(item)
-                        }
-                    } label: {
-                        EmptyView()
-                    }
-                    .pickerStyle(.segmented)
+                controlLabel("Range")
+                rangePicker
                     .frame(width: 122)
-                }
+                Spacer(minLength: 0)
             }
         }
         .controlSize(.small)
         .tint(Color.white.opacity(0.25))
     }
 
-    private func controlGroup<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.82))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: 48, alignment: .leading)
-
-            content()
-                .labelsHidden()
+    private var metricPicker: some View {
+        Picker(selection: $metric) {
+            ForEach(UsageAnalyticsMetric.allCases) { item in
+                Text(item.displayName).tag(item)
+            }
+        } label: {
+            EmptyView()
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var agentPicker: some View {
+        Picker(selection: $agentFilter) {
+            ForEach(UsageAnalyticsAgentFilter.allCases) { item in
+                Text(item.displayName).tag(item)
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var rangePicker: some View {
+        Picker(selection: $range) {
+            ForEach(UsageAnalyticsRange.allCases) { item in
+                Text(item.displayName).tag(item)
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private func controlLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.white.opacity(0.82))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(width: controlLabelWidth, alignment: .leading)
     }
 
     private func summaryStrip(_ presentation: UsageHeatmapPresentation) -> some View {
@@ -267,10 +276,6 @@ struct UsageHeatmapView: View {
                     .foregroundColor(.white.opacity(0.85))
 
                 Spacer()
-
-                Text(UsageFormatters.metricValue(presentation.selectedBucket.value(for: metric), metric: metric))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundColor(metricAccent)
             }
 
             if presentation.selectedSessions.isEmpty {
@@ -279,6 +284,7 @@ struct UsageHeatmapView: View {
                     .foregroundColor(.white.opacity(0.35))
                     .frame(maxWidth: .infinity, minHeight: 86, alignment: .center)
             } else {
+                daySummary(presentation.selectedBucket)
                 projectBreakdown(presentation)
                 sessionList(presentation)
             }
@@ -286,18 +292,28 @@ struct UsageHeatmapView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+    private func daySummary(_ bucket: UsageDayBucket) -> some View {
+        HStack(spacing: 6) {
+            DayMetricPill(label: "Tokens", value: UsageFormatters.compactTokens(bucket.totalTokens), accent: TerminalColors.green)
+            DayMetricPill(label: "Cost", value: UsageFormatters.cost(bucket.estimatedCostMicros), accent: TerminalColors.amber)
+            DayMetricPill(label: "Sessions", value: "\(bucket.sessionCount)", accent: TerminalColors.blue)
+        }
+    }
+
     private func projectBreakdown(_ presentation: UsageHeatmapPresentation) -> some View {
         HStack(spacing: 6) {
-            ForEach(presentation.topProjects, id: \.name) { item in
+            ForEach(presentation.topProjects) { item in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
 
-                    Text(UsageFormatters.compactTokens(item.tokens))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.38))
+                    HStack(spacing: 6) {
+                        ProjectMetricText(value: UsageFormatters.compactTokens(item.totalTokens), accent: TerminalColors.green)
+                        ProjectMetricText(value: UsageFormatters.cost(item.estimatedCostMicros), accent: TerminalColors.amber)
+                        ProjectMetricText(value: "\(item.sessionCount)s", accent: TerminalColors.blue)
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
@@ -356,15 +372,13 @@ struct UsageHeatmapView: View {
         let selectedSessions = filteredSessions
             .filter { $0.localDate == selectedDateKey }
             .sorted { $0.endedAt > $1.endedAt }
-        let topProjects = Dictionary(grouping: selectedSessions, by: \.projectName)
-            .map { (name: $0.key, tokens: $0.value.reduce(0) { $0 + $1.totalTokens }) }
-            .sorted { $0.tokens > $1.tokens }
+        let topProjects = UsageAnalyticsAggregation.projectSummaries(from: selectedSessions)
             .prefix(3)
 
         return UsageHeatmapPresentation(
             selectedDateKey: selectedDateKey,
             totalTokens: filteredSessions.reduce(0) { $0 + $1.totalTokens },
-            totalCostMicros: totalCostMicros(filteredSessions),
+            totalCostMicros: UsageAnalyticsAggregation.sumCostMicros(filteredSessions),
             totalSessions: filteredSessions.count,
             weekColumns: weekColumns,
             monthLabels: makeMonthLabels(weekColumns),
@@ -462,12 +476,6 @@ struct UsageHeatmapView: View {
         return labels
     }
 
-    private func totalCostMicros(_ sessions: [UsageSessionRecord]) -> Int64? {
-        let values = sessions.compactMap(\.estimatedCostMicros)
-        guard !values.isEmpty else { return nil }
-        return values.reduce(0, +)
-    }
-
     private func emptyBucket(for dateKey: String) -> UsageDayBucket {
         UsageDayBucket(
             localDate: dateKey,
@@ -486,14 +494,6 @@ struct UsageHeatmapView: View {
             return dateKey
         }
         return UsageHeatmapView.displayDateFormatter.string(from: date)
-    }
-
-    private var metricAccent: Color {
-        switch metric {
-        case .tokens: return TerminalColors.green
-        case .cost: return TerminalColors.amber
-        case .sessions: return TerminalColors.blue
-        }
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -543,7 +543,7 @@ private struct UsageHeatmapPresentation {
     let maxMetricValue: Double
     let selectedBucket: UsageDayBucket
     let selectedSessions: [UsageSessionRecord]
-    let topProjects: [(name: String, tokens: Int64)]
+    let topProjects: [UsageProjectUsageSummary]
 }
 
 private struct UsageHeatmapMonthLabel: Identifiable {
@@ -701,6 +701,47 @@ private struct SummaryPill: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.white.opacity(0.045))
         )
+    }
+}
+
+private struct DayMetricPill: View {
+    let label: String
+    let value: String
+    let accent: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.white.opacity(0.36))
+                .lineLimit(1)
+
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(accent.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+}
+
+private struct ProjectMetricText: View {
+    let value: String
+    let accent: Color
+
+    var body: some View {
+        Text(value)
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundColor(accent.opacity(0.62))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
     }
 }
 

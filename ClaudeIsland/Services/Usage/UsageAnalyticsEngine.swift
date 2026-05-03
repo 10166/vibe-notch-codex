@@ -9,7 +9,7 @@ import Foundation
 import CryptoKit
 import SQLite3
 
-nonisolated private let usageParserVersion = 4
+nonisolated private let usageParserVersion = 5
 nonisolated private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor UsageAnalyticsEngine {
@@ -417,13 +417,17 @@ nonisolated private enum UsageLogParser {
             return nil
         }
 
-        let projectName = projectName(from: cwd, fallback: url.deletingLastPathComponent().lastPathComponent)
+        let resolvedCwd = resolvedClaudeCwd(cwd: cwd, isSidechain: isSidechain, sessionId: sessionId, url: url)
+        let projectName = UsageProjectAttribution.projectName(
+            from: resolvedCwd,
+            fallback: url.deletingLastPathComponent().lastPathComponent
+        )
         return UsageSessionRecord(
             id: "\(sessionId)-\(pathHash)",
             sessionId: sessionId,
             agent: .claude,
             projectName: projectName,
-            cwdHash: UsageHash.hash(cwd ?? projectName),
+            cwdHash: UsageHash.hash(resolvedCwd ?? projectName),
             startedAt: startedAt,
             endedAt: endedAt,
             localDate: localDateString(for: endedAt),
@@ -487,7 +491,7 @@ nonisolated private enum UsageLogParser {
             return nil
         }
 
-        let projectName = projectName(from: cwd, fallback: url.deletingLastPathComponent().lastPathComponent)
+        let projectName = UsageProjectAttribution.projectName(from: cwd, fallback: url.deletingLastPathComponent().lastPathComponent)
         return UsageSessionRecord(
             id: "\(sessionId)-\(pathHash)",
             sessionId: sessionId,
@@ -502,6 +506,37 @@ nonisolated private enum UsageLogParser {
             estimatedCostMicros: PricingCatalog.estimateMicros(model: model, tokens: tokens),
             isSidechain: false
         )
+    }
+
+    private static func resolvedClaudeCwd(cwd: String?, isSidechain: Bool, sessionId: String, url: URL) -> String? {
+        let canonical = UsageProjectAttribution.canonicalCwd(cwd)
+        let parentCwd = isSidechain && canonical == nil
+            ? parentSessionCwd(forSubagentURL: url, sessionId: sessionId)
+            : nil
+        return UsageProjectAttribution.resolvedClaudeCwd(cwd: cwd, isSidechain: isSidechain, parentCwd: parentCwd)
+    }
+
+    private static func parentSessionCwd(forSubagentURL url: URL, sessionId: String) -> String? {
+        guard url.deletingLastPathComponent().lastPathComponent == "subagents" else {
+            return nil
+        }
+
+        let sessionDir = url.deletingLastPathComponent().deletingLastPathComponent()
+        let projectDir = sessionDir.deletingLastPathComponent()
+        let parentURL = projectDir.appendingPathComponent(sessionId).appendingPathExtension("jsonl")
+        guard let content = try? String(contentsOf: parentURL, encoding: .utf8) else {
+            return nil
+        }
+
+        for line in content.split(separator: "\n") {
+            guard let json = parseJSON(String(line)),
+                  let cwd = json["cwd"] as? String,
+                  !cwd.isEmpty else {
+                continue
+            }
+            return UsageProjectAttribution.canonicalCwd(cwd)
+        }
+        return nil
     }
 
     static func localDateString(for date: Date) -> String {
@@ -532,11 +567,6 @@ nonisolated private enum UsageLogParser {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value)
-    }
-
-    private static func projectName(from cwd: String?, fallback: String) -> String {
-        guard let cwd, !cwd.isEmpty else { return fallback }
-        return URL(fileURLWithPath: cwd).lastPathComponent
     }
 
     private static func fileDate(_ url: URL) -> Date? {

@@ -152,6 +152,14 @@ actor SessionStore {
 
         let newPhase = event.determinePhase()
 
+        if shouldIgnoreFinishedCompactionEvent(event: event, currentPhase: session.phase) {
+            sessions[sessionId] = session
+            if event.shouldSyncFile {
+                scheduleFileSync(sessionId: sessionId, cwd: event.cwd)
+            }
+            return
+        }
+
         if session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
         } else {
@@ -178,12 +186,28 @@ actor SessionStore {
         }
     }
 
+    private nonisolated func shouldIgnoreFinishedCompactionEvent(
+        event: HookEvent,
+        currentPhase: SessionPhase
+    ) -> Bool {
+        guard event.event == "PreCompact" || event.event == "PostCompact" else {
+            return false
+        }
+
+        switch currentPhase {
+        case .waitingForInput, .idle:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func createSession(from event: HookEvent) -> SessionState {
         let agentKind: AgentKind = event.agent == "codex" ? .codex : .claude
         return SessionState(
             sessionId: event.sessionId,
             cwd: event.cwd,
-            projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
+            projectName: UsageProjectAttribution.projectName(from: event.cwd, fallback: event.cwd),
             agentKind: agentKind,
             sessionFilePath: agentKind == .codex ? event.transcriptPath : nil,
             pid: event.pid,
@@ -198,7 +222,7 @@ actor SessionStore {
         var session = sessions[snapshot.sessionId] ?? SessionState(
             sessionId: snapshot.sessionId,
             cwd: snapshot.cwd,
-            projectName: URL(fileURLWithPath: snapshot.cwd).lastPathComponent,
+            projectName: UsageProjectAttribution.projectName(from: snapshot.cwd, fallback: snapshot.cwd),
             agentKind: .codex,
             sessionFilePath: snapshot.sessionFile,
             phase: .idle

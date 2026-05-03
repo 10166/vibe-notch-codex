@@ -120,7 +120,23 @@ nonisolated struct UsageSessionRecord: Identifiable, Equatable, Sendable {
     var totalTokens: Int64 { tokens.totalTokens }
 }
 
-nonisolated struct UsageDayBucket: Identifiable, Equatable, Sendable {
+nonisolated protocol UsageMetricAccessible: Sendable {
+    var totalTokens: Int64 { get }
+    var estimatedCostMicros: Int64? { get }
+    var sessionCount: Int { get }
+}
+
+extension UsageMetricAccessible {
+    func value(for metric: UsageAnalyticsMetric) -> Double {
+        switch metric {
+        case .tokens:   return Double(totalTokens)
+        case .cost:     return Double(estimatedCostMicros ?? 0)
+        case .sessions: return Double(sessionCount)
+        }
+    }
+}
+
+nonisolated struct UsageDayBucket: Identifiable, Equatable, Sendable, UsageMetricAccessible {
     let localDate: String
     let date: Date
     var inputTokens: Int64
@@ -135,17 +151,15 @@ nonisolated struct UsageDayBucket: Identifiable, Equatable, Sendable {
     var totalTokens: Int64 {
         inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens
     }
+}
 
-    func value(for metric: UsageAnalyticsMetric) -> Double {
-        switch metric {
-        case .tokens:
-            return Double(totalTokens)
-        case .cost:
-            return Double(estimatedCostMicros ?? 0)
-        case .sessions:
-            return Double(sessionCount)
-        }
-    }
+nonisolated struct UsageProjectUsageSummary: Identifiable, Equatable, Sendable, UsageMetricAccessible {
+    let name: String
+    var totalTokens: Int64
+    var estimatedCostMicros: Int64?
+    var sessionCount: Int
+
+    var id: String { name }
 }
 
 nonisolated struct UsageAnalyticsSnapshot: Equatable, Sendable {
@@ -160,6 +174,60 @@ nonisolated struct UsageAnalyticsSnapshot: Equatable, Sendable {
         sessions: [],
         scannedFileCount: 0
     )
+}
+
+nonisolated enum UsageAnalyticsAggregation {
+    static func projectSummaries(from sessions: [UsageSessionRecord]) -> [UsageProjectUsageSummary] {
+        Dictionary(grouping: sessions, by: \.projectName)
+            .map { projectName, projectSessions in
+                UsageProjectUsageSummary(
+                    name: projectName,
+                    totalTokens: projectSessions.reduce(0) { $0 + $1.totalTokens },
+                    estimatedCostMicros: sumCostMicros(projectSessions),
+                    sessionCount: projectSessions.count
+                )
+            }
+            .sorted {
+                if $0.totalTokens == $1.totalTokens {
+                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                return $0.totalTokens > $1.totalTokens
+            }
+    }
+
+    static func sumCostMicros(_ sessions: [UsageSessionRecord]) -> Int64? {
+        var total: Int64 = 0
+        var found = false
+        for session in sessions {
+            if let cost = session.estimatedCostMicros {
+                total += cost
+                found = true
+            }
+        }
+        return found ? total : nil
+    }
+}
+
+nonisolated enum UsageProjectAttribution {
+    static func projectName(from cwd: String?, fallback: String) -> String {
+        guard let cwd = canonicalCwd(cwd), !cwd.isEmpty else { return fallback }
+        return URL(fileURLWithPath: cwd).lastPathComponent
+    }
+
+    static func resolvedClaudeCwd(cwd: String?, isSidechain: Bool, parentCwd: String?) -> String? {
+        let canonical = canonicalCwd(cwd)
+        guard isSidechain else { return canonical }
+        return canonical ?? parentCwd
+    }
+
+    static func canonicalCwd(_ cwd: String?) -> String? {
+        guard let cwd, !cwd.isEmpty else { return nil }
+        let marker = "/.claude/worktrees/agent-"
+        guard let markerRange = cwd.range(of: marker) else { return cwd }
+
+        let projectPath = String(cwd[..<markerRange.lowerBound])
+        return projectPath.isEmpty ? cwd : projectPath
+    }
 }
 
 nonisolated enum UsageFormatters {

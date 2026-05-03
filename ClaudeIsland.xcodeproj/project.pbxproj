@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		513EA0FE603746920134DF46 /* ClaudeQuotaProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7084CB876967C3C1E694DCA /* ClaudeQuotaProviderTests.swift */; };
+		5A1F0A7F3B9C48E9A72F1101 /* UsageAnalyticsModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1F0A7E3B9C48E9A72F1101 /* UsageAnalyticsModelsTests.swift */; };
 		86E6BA1F03F74FDFD06F4C6B /* TerminalColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07D43647E0B98F24FB73209 /* TerminalColors.swift */; };
+		9F8C2B713D9F49A18D931101 /* UsageAnalyticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F8C2B703D9F49A18D931101 /* UsageAnalyticsModels.swift */; };
 		A0CB8D1D721AFBBAC06F6ACA /* CodexQuotaProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */; };
 		A2BD1073D65F01474DE76AF8 /* QuotaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC45FCA063FC2AD6608777C /* QuotaModels.swift */; };
 		C0FEC5DC0C766FE776BA9B66 /* QuotaModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */; };
@@ -30,8 +32,10 @@
 
 /* Begin PBXFileReference section */
 		440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexQuotaProviderTests.swift; sourceTree = "<group>"; };
+		5A1F0A7E3B9C48E9A72F1101 /* UsageAnalyticsModelsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UsageAnalyticsModelsTests.swift; sourceTree = "<group>"; };
 		6BC45FCA063FC2AD6608777C /* QuotaModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = QuotaModels.swift; path = SharedSources/QuotaModels.swift; sourceTree = "<group>"; };
 		9F89FFF9B10D5C0DAEC1742E /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		9F8C2B703D9F49A18D931101 /* UsageAnalyticsModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UsageAnalyticsModels.swift; path = ../ClaudeIsland/Models/UsageAnalyticsModels.swift; sourceTree = "<group>"; };
 		A07D43647E0B98F24FB73209 /* TerminalColors.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TerminalColors.swift; path = SharedSources/TerminalColors.swift; sourceTree = "<group>"; };
 		B690939EBA5A1D600F7681B2 /* ClaudeIslandTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClaudeIslandTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuotaModelsTests.swift; sourceTree = "<group>"; };
@@ -88,6 +92,7 @@
 				DD13ABC2D28A3CEF3F289039 /* QuotaModelsTests.swift */,
 				F7084CB876967C3C1E694DCA /* ClaudeQuotaProviderTests.swift */,
 				440848042CCFF8DC003F06AA /* CodexQuotaProviderTests.swift */,
+				5A1F0A7E3B9C48E9A72F1101 /* UsageAnalyticsModelsTests.swift */,
 				6716C2EF9A4739CBA132806B /* SharedSources */,
 			);
 			name = ClaudeIslandTests;
@@ -114,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				6BC45FCA063FC2AD6608777C /* QuotaModels.swift */,
+				9F8C2B703D9F49A18D931101 /* UsageAnalyticsModels.swift */,
 				A07D43647E0B98F24FB73209 /* TerminalColors.swift */,
 			);
 			name = SharedSources;
@@ -248,8 +254,10 @@
 			files = (
 				C0FEC5DC0C766FE776BA9B66 /* QuotaModelsTests.swift in Sources */,
 				513EA0FE603746920134DF46 /* ClaudeQuotaProviderTests.swift in Sources */,
+				5A1F0A7F3B9C48E9A72F1101 /* UsageAnalyticsModelsTests.swift in Sources */,
 				A0CB8D1D721AFBBAC06F6ACA /* CodexQuotaProviderTests.swift in Sources */,
 				A2BD1073D65F01474DE76AF8 /* QuotaModels.swift in Sources */,
+				9F8C2B713D9F49A18D931101 /* UsageAnalyticsModels.swift in Sources */,
 				86E6BA1F03F74FDFD06F4C6B /* TerminalColors.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
