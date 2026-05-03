@@ -160,6 +160,17 @@ actor SessionStore {
             return
         }
 
+        // Ignore late-arriving processing events after session has finished
+        // (Stop/Notification can race with PostToolUse from concurrent hook processes)
+        if shouldIgnoreLateProcessingEvent(event: event, currentPhase: session.phase) {
+            Self.logger.warning("Ignoring late processing event \(event.event) for finished session \(sessionId.prefix(8), privacy: .public)")
+            sessions[sessionId] = session
+            if event.shouldSyncFile {
+                scheduleFileSync(sessionId: sessionId, cwd: event.cwd)
+            }
+            return
+        }
+
         if session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
         } else {
@@ -199,6 +210,33 @@ actor SessionStore {
             return true
         default:
             return false
+        }
+    }
+
+    /// Ignore late-arriving processing events when session has already finished.
+    /// Claude Code hooks fire as separate Python processes, so PostToolUse/PreToolUse
+    /// can arrive after Stop due to process scheduling.
+    private nonisolated func shouldIgnoreLateProcessingEvent(
+        event: HookEvent,
+        currentPhase: SessionPhase
+    ) -> Bool {
+        // Only filter when session is in a "finished" state
+        guard currentPhase == .waitingForInput || currentPhase == .idle else {
+            return false
+        }
+
+        // Only filter events that would set phase to processing
+        let newPhase = event.determinePhase()
+        guard newPhase == .processing else {
+            return false
+        }
+
+        // Allow legitimate transitions: user sending a new prompt, or session starting
+        switch event.event {
+        case "UserPromptSubmit", "SessionStart":
+            return false
+        default:
+            return true
         }
     }
 
@@ -471,7 +509,6 @@ actor SessionStore {
             ))
             if session.phase.canTransition(to: newPhase) {
                 session.phase = newPhase
-                Self.logger.debug("Switched to next pending tool: \(nextPending.id.prefix(12), privacy: .public)")
             }
         } else {
             // No more pending tools - transition to processing
@@ -480,8 +517,6 @@ actor SessionStore {
                     session.phase = .processing
                 }
             } else if case .waitingForApproval = session.phase {
-                // The approved tool wasn't the one in phase context, but no others pending
-                // This can happen if tools were approved out of order
                 if session.phase.canTransition(to: .processing) {
                     session.phase = .processing
                 }
@@ -521,7 +556,6 @@ actor SessionStore {
                     type: .toolCall(tool),
                     timestamp: session.chatItems[i].timestamp
                 )
-                Self.logger.debug("Tool \(toolUseId.prefix(12), privacy: .public) completed with status: \(String(describing: result.status), privacy: .public)")
                 break
             }
         }
@@ -537,7 +571,6 @@ actor SessionStore {
                     receivedAt: nextPending.timestamp
                 ))
                 session.phase = newPhase
-                Self.logger.debug("Switched to next pending tool after completion: \(nextPending.id.prefix(12), privacy: .public)")
             } else {
                 if session.phase.canTransition(to: .processing) {
                     session.phase = .processing
@@ -576,7 +609,6 @@ actor SessionStore {
             ))
             if session.phase.canTransition(to: newPhase) {
                 session.phase = newPhase
-                Self.logger.debug("Switched to next pending tool after denial: \(nextPending.id.prefix(12), privacy: .public)")
             }
         } else {
             // No more pending tools - transition to processing (Claude will handle denial)
@@ -585,7 +617,6 @@ actor SessionStore {
                     session.phase = .processing
                 }
             } else if case .waitingForApproval = session.phase {
-                // The denied tool wasn't the one in phase context, but no others pending
                 if session.phase.canTransition(to: .processing) {
                     session.phase = .processing
                 }
