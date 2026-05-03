@@ -63,6 +63,7 @@ jobs:
             -configuration Release \
             -destination "generic/platform=macOS" \
             -derivedDataPath "$derived_data" \
+            MACOSX_DEPLOYMENT_TARGET=15.5 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="-" \
