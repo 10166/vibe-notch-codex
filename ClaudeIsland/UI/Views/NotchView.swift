@@ -141,6 +141,22 @@ struct NotchView: View {
         closedNotchSize.width + expansionWidth
     }
 
+    private var closedAgentLogoSize: CGFloat {
+        14
+    }
+
+    private var closedAgentLogoWidth: CGFloat {
+        let claudeWidth = closedAgentLogoSize * (66.0 / 52.0)
+        let hasClaude = displayedAgentKinds.contains(.claude)
+        let hasCodex = displayedAgentKinds.contains(.codex)
+
+        if hasClaude && hasCodex {
+            return claudeWidth + max(3, closedAgentLogoSize * 0.22) + closedAgentLogoSize
+        }
+
+        return hasClaude ? claudeWidth : closedAgentLogoSize
+    }
+
     // MARK: - Corner Radii
 
     private var topCornerRadius: CGFloat {
@@ -284,7 +300,7 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    AgentLogoStackIcon(kinds: displayedAgentKinds, size: 14, isActive: isProcessing)
+                    AgentLogoStackIcon(kinds: displayedAgentKinds, size: closedAgentLogoSize, isActive: isProcessing)
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
@@ -333,7 +349,7 @@ struct NotchView: View {
     }
 
     private var sideWidth: CGFloat {
-        max(0, closedNotchSize.height - 12) + 10
+        max(max(0, closedNotchSize.height - 12) + 10, closedAgentLogoWidth + 2)
     }
 
     // MARK: - Opened Header Content
@@ -344,7 +360,7 @@ struct NotchView: View {
             // Show static crab only if not showing activity in headerRow
             // (headerRow handles crab + indicator when showClosedActivity is true)
             if !showClosedActivity {
-                AgentLogoStackIcon(kinds: displayedAgentKinds, size: 14)
+                AgentLogoStackIcon(kinds: displayedAgentKinds, size: closedAgentLogoSize)
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }

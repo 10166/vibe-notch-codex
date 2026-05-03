@@ -36,26 +36,26 @@ struct AgentLogoStackIcon: View {
         kinds.first ?? .claude
     }
 
-    private var codexOffset: CGFloat {
-        size * 0.2
+    private var claudeWidth: CGFloat {
+        let claudeWidth = size * (66.0 / 52.0)
+        return claudeWidth
+    }
+
+    private var iconSpacing: CGFloat {
+        max(3, size * 0.22)
     }
 
     private var stackWidth: CGFloat {
-        let claudeWidth = size * (66.0 / 52.0)
-        return max(claudeWidth, size + codexOffset)
+        showsDualAgents ? claudeWidth + iconSpacing + size : max(claudeWidth, size)
     }
 
     var body: some View {
         if showsDualAgents {
-            ZStack(alignment: .leading) {
-                AgentLogoIcon(kind: .codex, size: size)
-                    .offset(x: codexOffset)
-                    .zIndex(0)
-
+            HStack(alignment: .center, spacing: iconSpacing) {
                 AgentLogoIcon(kind: .claude, size: size, isActive: isActive)
-                    .zIndex(1)
+                AgentLogoIcon(kind: .codex, size: size)
             }
-            .frame(width: stackWidth, height: size, alignment: .leading)
+            .frame(width: stackWidth, height: size, alignment: .center)
         } else {
             AgentLogoIcon(kind: singleKind, size: size, isActive: isActive)
         }
