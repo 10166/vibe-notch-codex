@@ -16,6 +16,7 @@ struct UsageHeatmapView: View {
     @State private var range: UsageAnalyticsRange = .twelveWeeks
     @State private var selectedDateKey: String = UsageHeatmapView.todayKey()
     @State private var hoveredCell: UsageHeatmapHover?
+    @State private var hoveredBarDay: ModelBarHover?
     @State private var hoveredModelName: String?
     @State private var chartMode: UsageChartMode = .heatmap
 
@@ -54,7 +55,12 @@ struct UsageHeatmapView: View {
         }
         .onChange(of: range) { _, newRange in
             hoveredCell = nil
+            hoveredBarDay = nil
             store.refresh(range: newRange)
+        }
+        .onChange(of: chartMode) { _, _ in
+            hoveredCell = nil
+            hoveredBarDay = nil
         }
     }
 
@@ -300,7 +306,7 @@ struct UsageHeatmapView: View {
     }
 
     private func modelTrendChartContent(dailyData: [ModelDailyEntry], modelOrder: [String], modelEntries: [ModelUsageEntry], modelTotalValue: Double) -> some View {
-        let maxValue = dailyData.map(\.totalValue).max() ?? 1
+        let maxValue = max(dailyData.map(\.totalValue).max() ?? 0, 1)
         let chartHeight: CGFloat = 140
         let yAxisW: CGFloat = 48
         let xAxisHeight: CGFloat = 18
@@ -316,7 +322,7 @@ struct UsageHeatmapView: View {
                     yAxisLabels(maxValue: maxValue, chartHeight: chartHeight - xAxisHeight, labelWidth: yAxisW)
 
                     // Chart area
-                    ZStack(alignment: .bottomLeading) {
+                    ZStack(alignment: .topLeading) {
                         // Grid lines + bars via Canvas
                         Canvas { context, size in
                             let drawHeight = size.height - xAxisHeight
@@ -336,6 +342,15 @@ struct UsageHeatmapView: View {
                             for (dayIndex, day) in dailyData.enumerated() {
                                 let barX = CGFloat(dayIndex) * (barWidth + barSpacing)
                                 guard barX + barWidth > 0, barX < drawWidth else { continue }
+                                let isSelected = day.localDate == selectedDateKey
+                                let highlightRect = CGRect(x: barX, y: 0, width: barWidth, height: drawHeight)
+
+                                if isSelected {
+                                    context.fill(
+                                        Path(highlightRect),
+                                        with: .color(Color.white.opacity(0.05))
+                                    )
+                                }
 
                                 var yOffset: CGFloat = 0
                                 for modelName in modelOrder {
@@ -351,9 +366,38 @@ struct UsageHeatmapView: View {
                                     context.fill(path, with: .color(ModelColorMap.color(for: modelName).opacity(0.9)))
                                     yOffset += segHeight
                                 }
+
+                                if isSelected {
+                                    let selectedPath = Path(
+                                        roundedRect: CGRect(
+                                            x: barX,
+                                            y: drawHeight - yOffset,
+                                            width: barWidth,
+                                            height: yOffset
+                                        ),
+                                        cornerRadius: barWidth > 3 ? 2 : 0
+                                    )
+                                    context.stroke(selectedPath, with: .color(Color.white.opacity(0.75)), lineWidth: 1.1)
+                                }
                             }
                         }
                         .frame(width: chartWidth, height: chartHeight - xAxisHeight)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case let .active(location):
+                                hoveredBarDay = hitBarDay(at: location, dailyData: dailyData, barWidth: barWidth, barSpacing: barSpacing)
+                            case .ended:
+                                hoveredBarDay = nil
+                            }
+                        }
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    guard let hit = hitBarDay(at: value.location, dailyData: dailyData, barWidth: barWidth, barSpacing: barSpacing) else { return }
+                                    selectedDateKey = hit.day.localDate
+                                }
+                        )
 
                         // X-axis date labels (sparse)
                         HStack(spacing: 0) {
@@ -372,6 +416,16 @@ struct UsageHeatmapView: View {
                         }
                         .frame(width: chartWidth, height: xAxisHeight)
                         .offset(y: chartHeight - xAxisHeight)
+
+                        if let hoveredBarDay {
+                            UsageHeatmapHoverTooltip(date: hoveredBarDay.day.date)
+                                .frame(width: hoverTooltipWidth, height: hoverTooltipHeight)
+                                .offset(
+                                    x: barTooltipX(hoveredBarDay.dayIndex, barWidth: barWidth, barSpacing: barSpacing, chartWidth: chartWidth),
+                                    y: 4
+                                )
+                                .allowsHitTesting(false)
+                        }
                     }
                     .frame(width: chartWidth, height: chartHeight)
                 }
@@ -385,6 +439,25 @@ struct UsageHeatmapView: View {
 
             modelLegend(modelEntries, total: modelTotalValue)
         }
+    }
+
+    private func hitBarDay(at location: CGPoint, dailyData: [ModelDailyEntry], barWidth: CGFloat, barSpacing: CGFloat) -> ModelBarHover? {
+        guard location.x >= 0, location.y >= 0 else { return nil }
+        let pitch = barWidth + barSpacing
+        guard pitch > 0 else { return nil }
+
+        let dayIndex = Int(location.x / pitch)
+        guard dayIndex >= 0, dayIndex < dailyData.count else { return nil }
+
+        let localX = location.x - CGFloat(dayIndex) * pitch
+        guard localX <= barWidth else { return nil }
+
+        return ModelBarHover(dayIndex: dayIndex, day: dailyData[dayIndex])
+    }
+
+    private func barTooltipX(_ dayIndex: Int, barWidth: CGFloat, barSpacing: CGFloat, chartWidth: CGFloat) -> CGFloat {
+        let barCenterX = CGFloat(dayIndex) * (barWidth + barSpacing) + barWidth / 2
+        return min(max(0, barCenterX - hoverTooltipWidth / 2), max(0, chartWidth - hoverTooltipWidth))
     }
 
     private func yAxisLabels(maxValue: Double, chartHeight: CGFloat, labelWidth: CGFloat) -> some View {
@@ -919,7 +992,15 @@ private struct UsageHeatmapCanvasGrid: View {
 }
 
 private struct UsageHeatmapHoverTooltip: View {
-    let day: UsageDayBucket
+    let date: Date
+
+    init(day: UsageDayBucket) {
+        self.date = day.date
+    }
+
+    init(date: Date) {
+        self.date = date
+    }
 
     var body: some View {
         Text(tooltipText)
@@ -941,7 +1022,7 @@ private struct UsageHeatmapHoverTooltip: View {
     }
 
     private var tooltipText: String {
-        UsageHeatmapHoverTooltip.formatter.string(from: day.date)
+        UsageHeatmapHoverTooltip.formatter.string(from: date)
     }
 
     private static let formatter: DateFormatter = {
@@ -1091,6 +1172,11 @@ private struct ModelDailyEntry {
     let date: Date
     let modelValues: [String: Double]
     var totalValue: Double { modelValues.values.reduce(0, +) }
+}
+
+private struct ModelBarHover {
+    let dayIndex: Int
+    let day: ModelDailyEntry
 }
 
 private enum ModelColorMap {
