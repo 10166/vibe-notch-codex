@@ -11,6 +11,7 @@ KEYS_DIR="$PROJECT_DIR/.sparkle-keys"
 
 # GitHub repository (owner/repo format)
 GITHUB_REPO="10166/vibe-notch-codex"
+GITHUB_APPCAST_URL="https://github.com/$GITHUB_REPO/releases/latest/download/appcast.xml"
 
 # Website repo for auto-updating appcast
 WEBSITE_DIR="${CLAUDE_ISLAND_WEBSITE:-$PROJECT_DIR/../ClaudeIsland-website}"
@@ -89,6 +90,8 @@ echo ""
 echo "=== Step 2: Creating DMG ==="
 
 DMG_PATH="$RELEASE_DIR/$APP_NAME-$VERSION.dmg"
+APPCAST_PATH="$RELEASE_DIR/appcast/appcast.xml"
+GITHUB_DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/v$VERSION/$APP_NAME-$VERSION.dmg"
 
 # Remove existing DMG if present
 if [ -f "$DMG_PATH" ]; then
@@ -192,7 +195,12 @@ else
         # Generate appcast.xml
         "$GENERATE_APPCAST" --ed-key-file "$KEYS_DIR/eddsa_private_key" "$APPCAST_DIR"
 
-        echo "Appcast generated at: $APPCAST_DIR/appcast.xml"
+        if [ -f "$APPCAST_PATH" ]; then
+            sed -i '' "s|url=\"[^\"]*$APP_NAME-$VERSION.dmg\"|url=\"$GITHUB_DOWNLOAD_URL\"|g" "$APPCAST_PATH"
+            echo "Updated appcast.xml with GitHub download URL"
+        fi
+
+        echo "Appcast generated at: $APPCAST_PATH"
     fi
 fi
 
@@ -207,13 +215,18 @@ if ! command -v gh &> /dev/null; then
     echo "WARNING: gh CLI not found. Install with: brew install gh"
     echo "Skipping GitHub release."
 else
+    RELEASE_ASSETS=("$DMG_PATH")
+    if [ -f "$APPCAST_PATH" ]; then
+        RELEASE_ASSETS+=("$APPCAST_PATH")
+    fi
+
     # Check if release already exists
     if gh release view "v$VERSION" --repo "$GITHUB_REPO" &>/dev/null; then
         echo "Release v$VERSION already exists. Updating..."
-        gh release upload "v$VERSION" "$DMG_PATH" --repo "$GITHUB_REPO" --clobber
+        gh release upload "v$VERSION" "${RELEASE_ASSETS[@]}" --repo "$GITHUB_REPO" --clobber
     else
         echo "Creating release v$VERSION..."
-        gh release create "v$VERSION" "$DMG_PATH" \
+        gh release create "v$VERSION" "${RELEASE_ASSETS[@]}" \
             --repo "$GITHUB_REPO" \
             --title "Vibe Notch v$VERSION" \
             --notes "## Vibe Notch v$VERSION
@@ -224,12 +237,14 @@ else
 3. Launch Vibe Notch from Applications
 
 ### Auto-updates
-After installation, Vibe Notch will automatically check for updates."
+After installation, Vibe Notch will automatically check GitHub releases for updates."
     fi
 
-    GITHUB_DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/v$VERSION/$APP_NAME-$VERSION.dmg"
     echo "GitHub release created: https://github.com/$GITHUB_REPO/releases/tag/v$VERSION"
     echo "Download URL: $GITHUB_DOWNLOAD_URL"
+    if [ -f "$APPCAST_PATH" ]; then
+        echo "Appcast URL: $GITHUB_APPCAST_URL"
+    fi
 fi
 
 echo ""
@@ -239,15 +254,9 @@ echo ""
 # ============================================
 echo "=== Step 6: Updating Website ==="
 
-if [ -d "$WEBSITE_PUBLIC" ] && [ -f "$RELEASE_DIR/appcast/appcast.xml" ]; then
+if [ -d "$WEBSITE_PUBLIC" ] && [ -f "$APPCAST_PATH" ]; then
     # Copy appcast to website
-    cp "$RELEASE_DIR/appcast/appcast.xml" "$WEBSITE_PUBLIC/appcast.xml"
-
-    # Update the download URL in appcast to point to GitHub releases
-    if [ -n "$GITHUB_DOWNLOAD_URL" ]; then
-        sed -i '' "s|url=\"[^\"]*$APP_NAME-$VERSION.dmg\"|url=\"$GITHUB_DOWNLOAD_URL\"|g" "$WEBSITE_PUBLIC/appcast.xml"
-        echo "Updated appcast.xml with GitHub download URL"
-    fi
+    cp "$APPCAST_PATH" "$WEBSITE_PUBLIC/appcast.xml"
 
     # Update src/config.ts with latest version and download URL (preserve other content)
     CONFIG_FILE="$WEBSITE_DIR/src/config.ts"
@@ -304,8 +313,9 @@ echo "=== Release Complete ==="
 echo ""
 echo "Files created:"
 echo "  - DMG: $DMG_PATH"
-if [ -f "$RELEASE_DIR/appcast/appcast.xml" ]; then
-    echo "  - Appcast: $RELEASE_DIR/appcast/appcast.xml"
+if [ -f "$APPCAST_PATH" ]; then
+    echo "  - Appcast: $APPCAST_PATH"
+    echo "  - Appcast URL: $GITHUB_APPCAST_URL"
 fi
 if [ -n "$GITHUB_DOWNLOAD_URL" ]; then
     echo "  - GitHub: https://github.com/$GITHUB_REPO/releases/tag/v$VERSION"
