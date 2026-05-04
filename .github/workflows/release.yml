@@ -36,8 +36,17 @@ jobs:
             exit 1
           fi
 
+          version="${tag#v}"
+          build=$(awk -F. '{
+            major = $1 + 0
+            minor = ($2 == "" ? 0 : $2 + 0)
+            patch = ($3 == "" ? 0 : $3 + 0)
+            printf "%d", major * 10000 + minor * 100 + patch
+          }' <<< "$version")
+
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
 
       - name: Check out tag
         uses: actions/checkout@v4
@@ -47,9 +56,14 @@ jobs:
 
       - name: Validate app version
         run: |
-          project_version=$(xcodebuild -project ClaudeIsland.xcodeproj -scheme ClaudeIsland -showBuildSettings 2>/dev/null | awk '/MARKETING_VERSION = / { print $3; exit }')
+          project_version=$(xcodebuild \
+            -project ClaudeIsland.xcodeproj \
+            -scheme ClaudeIsland \
+            MARKETING_VERSION="${{ steps.release.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.release.outputs.build }}" \
+            -showBuildSettings 2>/dev/null | awk '/MARKETING_VERSION = / { print $3; exit }')
           if [ "$project_version" != "${{ steps.release.outputs.version }}" ]; then
-            echo "Tag ${{ steps.release.outputs.tag }} does not match MARKETING_VERSION $project_version" >&2
+            echo "Could not apply MARKETING_VERSION for ${{ steps.release.outputs.tag }}; got $project_version" >&2
             exit 1
           fi
 
@@ -67,6 +81,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="-" \
+            MARKETING_VERSION="${{ steps.release.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.release.outputs.build }}" \
             build
 
       - name: Package DMG
@@ -81,6 +97,14 @@ jobs:
 
           version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app_path/Contents/Info.plist")
           build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$app_path/Contents/Info.plist")
+          if [ "$version" != "${{ steps.release.outputs.version }}" ]; then
+            echo "Built app version $version does not match tag ${{ steps.release.outputs.tag }}" >&2
+            exit 1
+          fi
+          if [ "$build" != "${{ steps.release.outputs.build }}" ]; then
+            echo "Built app build $build does not match expected ${{ steps.release.outputs.build }}" >&2
+            exit 1
+          fi
           dmg_path="$GITHUB_WORKSPACE/VibeNotch-$version.dmg"
 
           codesign --force --deep --sign - "$app_path"
