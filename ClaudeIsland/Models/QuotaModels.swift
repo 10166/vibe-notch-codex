@@ -26,21 +26,47 @@ public nonisolated enum QuotaProvider: String, CaseIterable, Identifiable, Senda
 
 // MARK: - Rate Window
 
+public nonisolated struct QuotaLocalUsageSummary: Equatable, Sendable {
+    public var totalTokens: Int64
+    public var estimatedCostMicros: Int64?
+    public var sessionCount: Int
+
+    public init(totalTokens: Int64, estimatedCostMicros: Int64? = nil, sessionCount: Int) {
+        self.totalTokens = totalTokens
+        self.estimatedCostMicros = estimatedCostMicros
+        self.sessionCount = sessionCount
+    }
+
+    public static let empty = QuotaLocalUsageSummary(
+        totalTokens: 0,
+        estimatedCostMicros: nil,
+        sessionCount: 0
+    )
+}
+
 public nonisolated struct QuotaRateWindow: Equatable, Sendable {
     public var usedPercent: Double
     public var windowMinutes: Int?
     public var resetsAt: Date?
     public var resetDescription: String?
+    public var localUsage: QuotaLocalUsageSummary?
 
-    public init(usedPercent: Double, windowMinutes: Int? = nil, resetsAt: Date? = nil, resetDescription: String? = nil) {
+    public init(usedPercent: Double, windowMinutes: Int? = nil, resetsAt: Date? = nil, resetDescription: String? = nil, localUsage: QuotaLocalUsageSummary? = nil) {
         self.usedPercent = usedPercent
         self.windowMinutes = windowMinutes
         self.resetsAt = resetsAt
         self.resetDescription = resetDescription
+        self.localUsage = localUsage
     }
 
     public var remainingPercent: Double {
         max(0, 100 - usedPercent)
+    }
+
+    public func withLocalUsage(_ summary: QuotaLocalUsageSummary?) -> QuotaRateWindow {
+        var copy = self
+        copy.localUsage = summary
+        return copy
     }
 }
 

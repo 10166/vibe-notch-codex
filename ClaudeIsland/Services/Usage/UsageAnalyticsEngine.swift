@@ -9,7 +9,7 @@ import Foundation
 import CryptoKit
 import SQLite3
 
-nonisolated private let usageParserVersion = 7
+nonisolated private let usageParserVersion = 8
 nonisolated private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor UsageAnalyticsEngine {
@@ -51,6 +51,39 @@ actor UsageAnalyticsEngine {
             sessions: [],
             scannedFileCount: claudeResult.scannedCount + codexResult.scannedCount
         )
+    }
+
+    func localUsage(agent: UsageAnalyticsAgent, from start: Date, to end: Date) async -> QuotaLocalUsageSummary {
+        guard start < end, let db = openDatabase() else {
+            return .empty
+        }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+        SELECT SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
+               SUM(cache_creation_tokens), SUM(estimated_cost_micros), COUNT(DISTINCT session_id)
+        FROM usage_events
+        WHERE agent = ? AND occurred_at >= ? AND occurred_at < ?
+        """
+        var summary = QuotaLocalUsageSummary.empty
+        withStatement(db, sql) { statement in
+            bindText(statement, 1, agent.rawValue)
+            sqlite3_bind_double(statement, 2, start.timeIntervalSince1970)
+            sqlite3_bind_double(statement, 3, end.timeIntervalSince1970)
+            guard sqlite3_step(statement) == SQLITE_ROW else { return }
+            let tokens = UsageTokenBreakdown(
+                inputTokens: sqlite3_column_int64(statement, 0),
+                outputTokens: sqlite3_column_int64(statement, 1),
+                cacheReadTokens: sqlite3_column_int64(statement, 2),
+                cacheCreationTokens: sqlite3_column_int64(statement, 3)
+            )
+            summary = QuotaLocalUsageSummary(
+                totalTokens: tokens.totalTokens,
+                estimatedCostMicros: optionalColumnInt64(statement, 4),
+                sessionCount: Int(sqlite3_column_int(statement, 5))
+            )
+        }
+        return summary
     }
 
     private func openDatabase() -> OpaquePointer? {
@@ -126,6 +159,28 @@ actor UsageAnalyticsEngine {
                 estimated_cost_micros INTEGER,
                 PRIMARY KEY (local_date, agent, project_name, model, is_sidechain)
             )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS usage_events (
+                event_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                file_path_hash TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                project_name TEXT NOT NULL,
+                cwd_hash TEXT NOT NULL,
+                occurred_at REAL NOT NULL,
+                local_date TEXT NOT NULL,
+                model TEXT,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                estimated_cost_micros INTEGER,
+                source_kind TEXT NOT NULL,
+                source_id TEXT,
+                line_number INTEGER NOT NULL,
+                is_sidechain INTEGER NOT NULL
+            )
             """
         ]
 
@@ -134,6 +189,8 @@ actor UsageAnalyticsEngine {
         }
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_sessions_local_date_agent_idx ON usage_sessions(local_date, agent)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_daily_local_date_agent_idx ON usage_daily(local_date, agent)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_events_agent_time_idx ON usage_events(agent, occurred_at)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS usage_events_file_idx ON usage_events(file_path_hash)", nil, nil, nil)
         sqlite3_exec(db, "UPDATE usage_file_index SET source_path = path_hash WHERE source_path LIKE '/%'", nil, nil, nil)
     }
 
@@ -165,16 +222,17 @@ actor UsageAnalyticsEngine {
             }
 
             deleteSessions(filePathHash: pathHash, db: db)
-            let record: UsageSessionRecord?
+            let parsed: ParsedUsageFile?
             switch agent {
             case .claude:
-                record = UsageLogParser.parseClaudeFile(url: url, pathHash: pathHash)
+                parsed = UsageLogParser.parseClaudeFile(url: url, pathHash: pathHash)
             case .codex:
-                record = UsageLogParser.parseCodexFile(url: url, pathHash: pathHash)
+                parsed = UsageLogParser.parseCodexFile(url: url, pathHash: pathHash)
             }
 
-            if let record {
-                upsertSession(record, filePathHash: pathHash, db: db)
+            if let parsed {
+                upsertSession(parsed.session, filePathHash: pathHash, db: db)
+                upsertEvents(parsed.events, filePathHash: pathHash, db: db)
             }
             upsertFileIndex(pathHash: pathHash, mtime: mtime, size: size, db: db)
             scannedCount += 1
@@ -220,6 +278,10 @@ actor UsageAnalyticsEngine {
 
     private func deleteSessions(filePathHash: String, db: OpaquePointer?) {
         withStatement(db, "DELETE FROM usage_sessions WHERE file_path_hash = ?") { statement in
+            bindText(statement, 1, filePathHash)
+            sqlite3_step(statement)
+        }
+        withStatement(db, "DELETE FROM usage_events WHERE file_path_hash = ?") { statement in
             bindText(statement, 1, filePathHash)
             sqlite3_step(statement)
         }
@@ -269,6 +331,43 @@ actor UsageAnalyticsEngine {
             bindOptionalInt64(statement, 15, record.estimatedCostMicros)
             sqlite3_bind_int(statement, 16, record.isSidechain ? 1 : 0)
             sqlite3_step(statement)
+        }
+    }
+
+    private func upsertEvents(_ events: [UsageTokenEventRecord], filePathHash: String, db: OpaquePointer?) {
+        guard !events.isEmpty else { return }
+
+        let sql = """
+        INSERT OR REPLACE INTO usage_events
+        (event_id, session_id, file_path_hash, agent, project_name, cwd_hash, occurred_at, local_date,
+         model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+         estimated_cost_micros, source_kind, source_id, line_number, is_sidechain)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        withStatement(db, sql) { statement in
+            for event in events {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                bindText(statement, 1, event.id)
+                bindText(statement, 2, event.sessionId)
+                bindText(statement, 3, filePathHash)
+                bindText(statement, 4, event.agent.rawValue)
+                bindText(statement, 5, event.projectName)
+                bindText(statement, 6, event.cwdHash)
+                sqlite3_bind_double(statement, 7, event.timestamp.timeIntervalSince1970)
+                bindText(statement, 8, event.localDate)
+                bindOptionalText(statement, 9, event.model)
+                sqlite3_bind_int64(statement, 10, event.tokens.inputTokens)
+                sqlite3_bind_int64(statement, 11, event.tokens.outputTokens)
+                sqlite3_bind_int64(statement, 12, event.tokens.cacheReadTokens)
+                sqlite3_bind_int64(statement, 13, event.tokens.cacheCreationTokens)
+                bindOptionalInt64(statement, 14, event.estimatedCostMicros)
+                bindText(statement, 15, event.sourceKind)
+                bindOptionalText(statement, 16, event.sourceId)
+                sqlite3_bind_int(statement, 17, Int32(event.lineNumber))
+                sqlite3_bind_int(statement, 18, event.isSidechain ? 1 : 0)
+                sqlite3_step(statement)
+            }
         }
     }
 
@@ -417,8 +516,27 @@ actor UsageAnalyticsEngine {
 
 }
 
+nonisolated private struct ParsedUsageFile {
+    let session: UsageSessionRecord
+    let events: [UsageTokenEventRecord]
+}
+
+nonisolated private struct PendingUsageEvent {
+    let timestamp: Date
+    let model: String?
+    let tokens: UsageTokenBreakdown
+    let sourceKind: String
+    let sourceId: String?
+    let lineNumber: Int
+}
+
+nonisolated private enum UsageEventSourceKind {
+    static let claudeAssistant = "claude_assistant"
+    static let codexTokenCount = "codex_token_count"
+}
+
 nonisolated private enum UsageLogParser {
-    static func parseClaudeFile(url: URL, pathHash: String) -> UsageSessionRecord? {
+    static func parseClaudeFile(url: URL, pathHash: String) -> ParsedUsageFile? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
         var sessionId = url.deletingPathExtension().lastPathComponent
@@ -428,8 +546,11 @@ nonisolated private enum UsageLogParser {
         var lastTimestamp: Date?
         var tokens = UsageTokenBreakdown()
         var isSidechain = false
+        var pendingEventsByMessageId: [String: PendingUsageEvent] = [:]
+        var unkeyedPendingEvents: [PendingUsageEvent] = []
 
-        for line in content.split(separator: "\n") {
+        for (offset, line) in content.split(separator: "\n").enumerated() {
+            let lineNumber = offset + 1
             guard let json = parseJSON(String(line)) else { continue }
 
             if let timestamp = parseTimestamp(json["timestamp"] as? String) {
@@ -447,11 +568,36 @@ nonisolated private enum UsageLogParser {
             }
 
             model = (message["model"] as? String) ?? model
-            tokens.inputTokens += Int64(usage["input_tokens"] as? Int ?? 0)
-            tokens.outputTokens += Int64(usage["output_tokens"] as? Int ?? 0)
-            tokens.cacheReadTokens += Int64(usage["cache_read_input_tokens"] as? Int ?? 0)
-            tokens.cacheCreationTokens += Int64(usage["cache_creation_input_tokens"] as? Int ?? 0)
+            let eventTokens = UsageTokenBreakdown(
+                inputTokens: tokenValue(usage["input_tokens"]),
+                outputTokens: tokenValue(usage["output_tokens"]),
+                cacheReadTokens: tokenValue(usage["cache_read_input_tokens"]),
+                cacheCreationTokens: tokenValue(usage["cache_creation_input_tokens"])
+            )
+            guard eventTokens.totalTokens > 0 else { continue }
+
+            let messageId = message["id"] as? String
+            if let timestamp = parseTimestamp(json["timestamp"] as? String) {
+                let event = PendingUsageEvent(
+                    timestamp: timestamp,
+                    model: model,
+                    tokens: eventTokens,
+                    sourceKind: UsageEventSourceKind.claudeAssistant,
+                    sourceId: messageId,
+                    lineNumber: lineNumber
+                )
+                if let messageId {
+                    pendingEventsByMessageId[messageId] = event
+                } else {
+                    unkeyedPendingEvents.append(event)
+                }
+            }
         }
+
+        let pendingEvents = (
+            unkeyedPendingEvents + pendingEventsByMessageId.values
+        ).sorted { $0.lineNumber < $1.lineNumber }
+        tokens = sumTokens(pendingEvents.map(\.tokens))
 
         guard let startedAt = firstTimestamp ?? fileDate(url),
               let endedAt = lastTimestamp ?? firstTimestamp ?? fileDate(url) else {
@@ -463,12 +609,13 @@ nonisolated private enum UsageLogParser {
             from: resolvedCwd,
             fallback: url.deletingLastPathComponent().lastPathComponent
         )
-        return UsageSessionRecord(
+        let cwdHash = UsageHash.hash(resolvedCwd ?? projectName)
+        let session = UsageSessionRecord(
             id: "\(sessionId)-\(pathHash)",
             sessionId: sessionId,
             agent: .claude,
             projectName: projectName,
-            cwdHash: UsageHash.hash(resolvedCwd ?? projectName),
+            cwdHash: cwdHash,
             startedAt: startedAt,
             endedAt: endedAt,
             localDate: localDateString(for: endedAt),
@@ -477,9 +624,19 @@ nonisolated private enum UsageLogParser {
             estimatedCostMicros: PricingCatalog.estimateMicros(model: model, tokens: tokens),
             isSidechain: isSidechain
         )
+        let events = makeEvents(
+            pendingEvents,
+            sessionId: sessionId,
+            pathHash: pathHash,
+            agent: .claude,
+            projectName: projectName,
+            cwdHash: cwdHash,
+            isSidechain: isSidechain
+        )
+        return ParsedUsageFile(session: session, events: events)
     }
 
-    static func parseCodexFile(url: URL, pathHash: String) -> UsageSessionRecord? {
+    static func parseCodexFile(url: URL, pathHash: String) -> ParsedUsageFile? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
 
         var sessionId = url.deletingPathExtension().lastPathComponent
@@ -489,8 +646,11 @@ nonisolated private enum UsageLogParser {
         var lastTimestamp: Date?
         var tokens = UsageTokenBreakdown()
         var sawSessionMeta = false
+        var previousTotal: UsageTokenBreakdown?
+        var pendingEvents: [PendingUsageEvent] = []
 
-        for line in content.split(separator: "\n") {
+        for (offset, line) in content.split(separator: "\n").enumerated() {
+            let lineNumber = offset + 1
             guard let json = parseJSON(String(line)) else { continue }
             if let timestamp = parseTimestamp(json["timestamp"] as? String) {
                 if firstTimestamp == nil { firstTimestamp = timestamp }
@@ -515,14 +675,28 @@ nonisolated private enum UsageLogParser {
                payload["type"] as? String == "token_count",
                let info = payload["info"] as? [String: Any],
                let total = info["total_token_usage"] as? [String: Any] {
-                let totalInputTokens = Int64(total["input_tokens"] as? Int ?? 0)
-                let cachedInputTokens = Int64(total["cached_input_tokens"] as? Int ?? 0)
-                tokens = UsageTokenBreakdown(
+                let totalInputTokens = tokenValue(total["input_tokens"])
+                let cachedInputTokens = tokenValue(total["cached_input_tokens"])
+                let currentTotal = UsageTokenBreakdown(
                     inputTokens: max(0, totalInputTokens - cachedInputTokens),
-                    outputTokens: Int64(total["output_tokens"] as? Int ?? 0),
+                    outputTokens: tokenValue(total["output_tokens"]),
                     cacheReadTokens: cachedInputTokens,
                     cacheCreationTokens: 0
                 )
+                let delta = deltaTokens(current: currentTotal, previous: previousTotal)
+                previousTotal = currentTotal
+                tokens = currentTotal
+
+                if delta.totalTokens > 0, let timestamp = parseTimestamp(json["timestamp"] as? String) {
+                    pendingEvents.append(PendingUsageEvent(
+                        timestamp: timestamp,
+                        model: model,
+                        tokens: delta,
+                        sourceKind: UsageEventSourceKind.codexTokenCount,
+                        sourceId: nil,
+                        lineNumber: lineNumber
+                    ))
+                }
             }
         }
 
@@ -533,12 +707,13 @@ nonisolated private enum UsageLogParser {
         }
 
         let projectName = UsageProjectAttribution.projectName(from: cwd, fallback: url.deletingLastPathComponent().lastPathComponent)
-        return UsageSessionRecord(
+        let cwdHash = UsageHash.hash(cwd ?? projectName)
+        let session = UsageSessionRecord(
             id: "\(sessionId)-\(pathHash)",
             sessionId: sessionId,
             agent: .codex,
             projectName: projectName,
-            cwdHash: UsageHash.hash(cwd ?? projectName),
+            cwdHash: cwdHash,
             startedAt: startedAt,
             endedAt: endedAt,
             localDate: localDateString(for: endedAt),
@@ -547,6 +722,16 @@ nonisolated private enum UsageLogParser {
             estimatedCostMicros: PricingCatalog.estimateMicros(model: model, tokens: tokens),
             isSidechain: false
         )
+        let events = makeEvents(
+            pendingEvents,
+            sessionId: sessionId,
+            pathHash: pathHash,
+            agent: .codex,
+            projectName: projectName,
+            cwdHash: cwdHash,
+            isSidechain: false
+        )
+        return ParsedUsageFile(session: session, events: events)
     }
 
     private static func resolvedClaudeCwd(cwd: String?, isSidechain: Bool, sessionId: String, url: URL) -> String? {
@@ -578,6 +763,77 @@ nonisolated private enum UsageLogParser {
             return UsageProjectAttribution.canonicalCwd(cwd)
         }
         return nil
+    }
+
+    private static func makeEvents(
+        _ pendingEvents: [PendingUsageEvent],
+        sessionId: String,
+        pathHash: String,
+        agent: UsageAnalyticsAgent,
+        projectName: String,
+        cwdHash: String,
+        isSidechain: Bool) -> [UsageTokenEventRecord]
+    {
+        pendingEvents.map { pending in
+            let signature = usageSignature(model: pending.model, tokens: pending.tokens)
+            let stableSource = pending.sourceId ?? "line-\(pending.lineNumber)"
+            let eventHash = UsageHash.hash("\(pathHash)|\(pending.sourceKind)|\(stableSource)|\(signature)")
+            return UsageTokenEventRecord(
+                id: "\(pathHash)-\(pending.sourceKind)-\(eventHash)",
+                sessionId: sessionId,
+                agent: agent,
+                projectName: projectName,
+                cwdHash: cwdHash,
+                timestamp: pending.timestamp,
+                localDate: localDateString(for: pending.timestamp),
+                model: pending.model,
+                tokens: pending.tokens,
+                estimatedCostMicros: PricingCatalog.estimateMicros(model: pending.model, tokens: pending.tokens),
+                sourceKind: pending.sourceKind,
+                sourceId: pending.sourceId,
+                lineNumber: pending.lineNumber,
+                isSidechain: isSidechain
+            )
+        }
+    }
+
+    private static func deltaTokens(current: UsageTokenBreakdown, previous: UsageTokenBreakdown?) -> UsageTokenBreakdown {
+        guard let previous else { return current }
+        return UsageTokenBreakdown(
+            inputTokens: max(0, current.inputTokens - previous.inputTokens),
+            outputTokens: max(0, current.outputTokens - previous.outputTokens),
+            cacheReadTokens: max(0, current.cacheReadTokens - previous.cacheReadTokens),
+            cacheCreationTokens: max(0, current.cacheCreationTokens - previous.cacheCreationTokens)
+        )
+    }
+
+    private static func sumTokens(_ values: [UsageTokenBreakdown]) -> UsageTokenBreakdown {
+        values.reduce(UsageTokenBreakdown()) { partial, next in
+            UsageTokenBreakdown(
+                inputTokens: partial.inputTokens + next.inputTokens,
+                outputTokens: partial.outputTokens + next.outputTokens,
+                cacheReadTokens: partial.cacheReadTokens + next.cacheReadTokens,
+                cacheCreationTokens: partial.cacheCreationTokens + next.cacheCreationTokens
+            )
+        }
+    }
+
+    private static func usageSignature(model: String?, tokens: UsageTokenBreakdown) -> String {
+        [
+            model ?? "",
+            "\(tokens.inputTokens)",
+            "\(tokens.outputTokens)",
+            "\(tokens.cacheReadTokens)",
+            "\(tokens.cacheCreationTokens)"
+        ].joined(separator: ":")
+    }
+
+    private static func tokenValue(_ value: Any?) -> Int64 {
+        if let int = value as? Int { return Int64(int) }
+        if let int64 = value as? Int64 { return int64 }
+        if let number = value as? NSNumber { return number.int64Value }
+        if let string = value as? String, let parsed = Int64(string) { return parsed }
+        return 0
     }
 
     static func localDateString(for date: Date) -> String {

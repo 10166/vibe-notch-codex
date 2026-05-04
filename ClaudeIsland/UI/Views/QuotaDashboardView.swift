@@ -273,6 +273,31 @@ private struct QuotaProgressBar: View {
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.4))
             }
+
+            if let localUsage = window.localUsage {
+                localUsageText(localUsage)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+            }
         }
+    }
+
+    private func localUsageText(_ summary: QuotaLocalUsageSummary) -> Text {
+        let tokens = UsageFormatters.compactTokens(summary.totalTokens)
+        let cost = UsageFormatters.cost(summary.estimatedCostMicros)
+        let sessions = summary.sessionCount == 1 ? "1 session" : "\(summary.sessionCount) sessions"
+
+        return Text("Local estimate: ")
+            .foregroundColor(.white.opacity(0.46))
+            + Text("\(tokens) tokens")
+            .foregroundColor(TerminalColors.green.opacity(0.82))
+            + Text(" / ")
+            .foregroundColor(.white.opacity(0.46))
+            + Text(cost)
+            .foregroundColor(TerminalColors.amber.opacity(0.9))
+            + Text(" / ")
+            .foregroundColor(.white.opacity(0.46))
+            + Text(sessions)
+            .foregroundColor(TerminalColors.blue.opacity(0.9))
     }
 }

@@ -32,6 +32,25 @@ final class QuotaModelsTests: XCTestCase {
         XCTAssertEqual(window.remainingPercent, 100)
     }
 
+    func testRateWindowWithLocalUsage() {
+        let summary = QuotaLocalUsageSummary(
+            totalTokens: 12_345,
+            estimatedCostMicros: 678,
+            sessionCount: 2
+        )
+        let window = QuotaRateWindow(usedPercent: 30).withLocalUsage(summary)
+
+        XCTAssertEqual(window.localUsage?.totalTokens, 12_345)
+        XCTAssertEqual(window.localUsage?.estimatedCostMicros, 678)
+        XCTAssertEqual(window.localUsage?.sessionCount, 2)
+    }
+
+    func testLocalUsageSummaryEmpty() {
+        XCTAssertEqual(QuotaLocalUsageSummary.empty.totalTokens, 0)
+        XCTAssertNil(QuotaLocalUsageSummary.empty.estimatedCostMicros)
+        XCTAssertEqual(QuotaLocalUsageSummary.empty.sessionCount, 0)
+    }
+
     // MARK: - QuotaSnapshot
 
     func testEmptySnapshot() {

@@ -38,18 +38,24 @@ final class QuotaStore: ObservableObject {
         isRefreshing = true
 
         refreshTask = Task {
-            let claudeResult: QuotaProviderSnapshot
-            if let config = BYOKDetector.detect() {
-                claudeResult = await Self.fetchBYOKQuota(config: config)
-            } else {
-                claudeResult = await ClaudeQuotaProvider.fetch()
-            }
-
+            let byokConfig = BYOKDetector.detect()
+            async let claudeResult = Self.fetchClaudeQuota(byokConfig: byokConfig)
             async let codexResult = CodexQuotaProvider.fetch()
+            async let analyticsRefresh = UsageAnalyticsEngine.shared.refresh(
+                range: .twelveWeeks,
+                claudeProjectsDir: ClaudePaths.projectsDir,
+                codexSessionsDir: CodexPaths.sessionsDir
+            )
 
+            let rawClaudeResult = await claudeResult
+            let rawCodexResult = await codexResult
+            _ = await analyticsRefresh
+
+            async let claudeWithUsage = Self.attachLocalUsage(to: rawClaudeResult, agent: .claude)
+            async let codexWithUsage = Self.attachLocalUsage(to: rawCodexResult, agent: .codex)
             let providers: [QuotaProvider: QuotaProviderSnapshot] = [
-                .claude: claudeResult,
-                .codex: await codexResult,
+                .claude: await claudeWithUsage,
+                .codex: await codexWithUsage,
             ]
 
             guard !Task.isCancelled else { return }
@@ -62,6 +68,13 @@ final class QuotaStore: ObservableObject {
             }
             isRefreshing = false
         }
+    }
+
+    private static func fetchClaudeQuota(byokConfig: BYOKConfiguration?) async -> QuotaProviderSnapshot {
+        if let byokConfig {
+            return await fetchBYOKQuota(config: byokConfig)
+        }
+        return await ClaudeQuotaProvider.fetch()
     }
 
     private static func fetchBYOKQuota(config: BYOKConfiguration) async -> QuotaProviderSnapshot {
@@ -80,5 +93,36 @@ final class QuotaStore: ObservableObject {
                 updatedAt: Date()
             )
         }
+    }
+
+    private static func attachLocalUsage(to snapshot: QuotaProviderSnapshot, agent: UsageAnalyticsAgent) async -> QuotaProviderSnapshot {
+        var copy = snapshot
+        copy.primary = await windowWithLocalUsage(snapshot.primary, agent: agent)
+        copy.secondary = await windowWithLocalUsage(snapshot.secondary, agent: agent)
+        return copy
+    }
+
+    private static func windowWithLocalUsage(_ window: QuotaRateWindow?, agent: UsageAnalyticsAgent) async -> QuotaRateWindow? {
+        guard let window, let interval = localWindowInterval(for: window) else {
+            return window
+        }
+        let summary = await UsageAnalyticsEngine.shared.localUsage(
+            agent: agent,
+            from: interval.start,
+            to: interval.end
+        )
+        return window.withLocalUsage(summary)
+    }
+
+    private static func localWindowInterval(for window: QuotaRateWindow) -> (start: Date, end: Date)? {
+        guard let minutes = window.windowMinutes, minutes > 0 else {
+            return nil
+        }
+        let now = Date()
+        let reset = window.resetsAt ?? now
+        let start = reset.addingTimeInterval(TimeInterval(-minutes * 60))
+        let end = min(now, reset)
+        guard start < end else { return nil }
+        return (start, end)
     }
 }

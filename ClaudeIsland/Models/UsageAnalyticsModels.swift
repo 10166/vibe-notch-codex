@@ -120,6 +120,25 @@ nonisolated struct UsageSessionRecord: Identifiable, Equatable, Sendable {
     var totalTokens: Int64 { tokens.totalTokens }
 }
 
+nonisolated struct UsageTokenEventRecord: Identifiable, Equatable, Sendable {
+    let id: String
+    let sessionId: String
+    let agent: UsageAnalyticsAgent
+    let projectName: String
+    let cwdHash: String
+    let timestamp: Date
+    let localDate: String
+    let model: String?
+    let tokens: UsageTokenBreakdown
+    let estimatedCostMicros: Int64?
+    let sourceKind: String
+    let sourceId: String?
+    let lineNumber: Int
+    let isSidechain: Bool
+
+    var totalTokens: Int64 { tokens.totalTokens }
+}
+
 nonisolated protocol UsageMetricAccessible: Sendable {
     var totalTokens: Int64 { get }
     var estimatedCostMicros: Int64? { get }
