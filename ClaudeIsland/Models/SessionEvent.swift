@@ -137,8 +137,9 @@ extension HookEvent {
             return .compacting
         }
 
-        // Permission request creates waitingForApproval state
-        if expectsResponse, let tool = tool {
+        // Permission request creates waitingForApproval state. Codex approval
+        // stays native, so it does not expect a socket response.
+        if event == "PermissionRequest", status == "waiting_for_approval", let tool = tool {
             return .waitingForApproval(PermissionContext(
                 toolUseId: toolUseId ?? "",
                 toolName: tool,
@@ -173,7 +174,7 @@ extension HookEvent {
     /// Whether this event should trigger a file sync
     nonisolated var shouldSyncFile: Bool {
         switch event {
-        case "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop":
+        case "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop":
             return true
         default:
             return false

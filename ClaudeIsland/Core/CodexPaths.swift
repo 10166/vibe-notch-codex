@@ -8,7 +8,7 @@
 import Foundation
 
 enum CodexPaths {
-    static var codexDir: URL {
+    nonisolated static var codexDir: URL {
         let fm = FileManager.default
         if let envDir = Foundation.ProcessInfo.processInfo.environment["CODEX_HOME"], !envDir.isEmpty {
             let expanded = (envDir as NSString).expandingTildeInPath
@@ -17,32 +17,32 @@ enum CodexPaths {
         return fm.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
     }
 
-    static var sessionsDir: URL {
+    nonisolated static var sessionsDir: URL {
         codexDir.appendingPathComponent("sessions")
     }
 
-    static var hooksDir: URL {
+    nonisolated static var hooksDir: URL {
         codexDir.appendingPathComponent("hooks")
     }
 
-    static var hooksFile: URL {
+    nonisolated static var hooksFile: URL {
         codexDir.appendingPathComponent("hooks.json")
     }
 
-    static var configFile: URL {
+    nonisolated static var configFile: URL {
         codexDir.appendingPathComponent("config.toml")
     }
 
-    static var sessionIndexFile: URL {
+    nonisolated static var sessionIndexFile: URL {
         codexDir.appendingPathComponent("session_index.jsonl")
     }
 
     /// Shell-safe absolute path for hook commands in hooks.json.
-    static var hookScriptShellPath: String {
+    nonisolated static var hookScriptShellPath: String {
         shellQuote(hooksDir.appendingPathComponent("codex-island-state.py").path)
     }
 
-    private static func shellQuote(_ path: String) -> String {
+    nonisolated private static func shellQuote(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

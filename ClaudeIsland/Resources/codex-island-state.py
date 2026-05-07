@@ -85,7 +85,7 @@ def main():
     elif event == "PermissionRequest":
         # Codex owns its native approval prompt. Notify the app without
         # blocking the hook, otherwise Codex cannot show its own approve UI.
-        state["status"] = "processing"
+        state["status"] = "waiting_for_approval"
         state["tool"] = data.get("tool_name")
         state["tool_input"] = tool_input
         if data.get("tool_use_id"):

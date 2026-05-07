@@ -487,6 +487,28 @@ struct NotchView: View {
             viewModel.notchOpen(reason: .notification)
         }
 
+        if !newPendingIds.isEmpty {
+            let newlyPendingSessions = sessions.filter { newPendingIds.contains($0.stableId) }
+
+            if let soundName = AppSettings.notificationSound.soundName {
+                Task {
+                    let shouldPlaySound = await shouldPlayNotificationSound(for: newlyPendingSessions)
+                    if shouldPlaySound {
+                        await MainActor.run {
+                            _ = NSSound(named: soundName)?.play()
+                        }
+                    }
+                }
+            }
+
+            DispatchQueue.main.async {
+                isBouncing = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    isBouncing = false
+                }
+            }
+        }
+
         previousPendingIds = currentIds
     }
 
@@ -520,7 +542,7 @@ struct NotchView: View {
                     let shouldPlaySound = await shouldPlayNotificationSound(for: newlyWaitingSessions)
                     if shouldPlaySound {
                         await MainActor.run {
-                            NSSound(named: soundName)?.play()
+                            _ = NSSound(named: soundName)?.play()
                         }
                     }
                 }

@@ -126,7 +126,7 @@ actor SessionStore {
 
     private func processHookEvent(_ event: HookEvent) async {
         let sessionId = event.sessionId
-        let isNewSession = sessions[sessionId] == nil
+        let isNewSession = !sessions.keys.contains(sessionId)
         var session = sessions[sessionId] ?? createSession(from: event)
 
         // Track new session in Mixpanel
@@ -175,11 +175,6 @@ actor SessionStore {
             session.phase = newPhase
         } else {
             Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
-        }
-
-        if event.event == "PermissionRequest", let toolUseId = event.toolUseId {
-            Self.logger.debug("Setting tool \(toolUseId.prefix(12), privacy: .public) status to waitingForApproval")
-            updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
         }
 
         processToolTracking(event: event, session: &session)
@@ -256,7 +251,7 @@ actor SessionStore {
     }
 
     private func processCodexSession(_ snapshot: CodexSessionSnapshot) async {
-        let isNewSession = sessions[snapshot.sessionId] == nil
+        let isNewSession = !sessions.keys.contains(snapshot.sessionId)
         var session = sessions[snapshot.sessionId] ?? SessionState(
             sessionId: snapshot.sessionId,
             cwd: snapshot.cwd,
@@ -271,19 +266,28 @@ actor SessionStore {
         }
 
         session.lastActivity = snapshot.updatedAt
-        let conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
-        let turnStatus = await CodexConversationParser.shared.latestTurnStatus(sessionFile: snapshot.sessionFile)
-        session.conversationInfo = conversationInfo
+        session.conversationInfo = await CodexConversationParser.shared.parse(sessionFile: snapshot.sessionFile)
 
         if !session.phase.isWaitingForApproval {
+            let turnStatus = await CodexConversationParser.shared.latestTurnStatus(sessionFile: snapshot.sessionFile)
             let newPhase = codexPhase(for: snapshot, turnStatus: turnStatus)
             if session.phase.canTransition(to: newPhase) {
                 session.phase = newPhase
             }
         }
 
+        if isNewSession || session.chatItems.isEmpty {
+            session = await loadCodexHistory(for: session, sessionFile: snapshot.sessionFile)
+        }
+
         sessions[snapshot.sessionId] = session
-        scheduleFileSync(sessionId: snapshot.sessionId, cwd: snapshot.cwd)
+
+        switch session.phase {
+        case .processing, .waitingForApproval:
+            scheduleFileSync(sessionId: snapshot.sessionId, cwd: snapshot.cwd)
+        default:
+            break
+        }
     }
 
     private nonisolated func codexPhase(
@@ -300,11 +304,33 @@ actor SessionStore {
         }
     }
 
+    private func loadCodexHistory(for session: SessionState, sessionFile: String) async -> SessionState {
+        var updatedSession = session
+        let messages = await CodexConversationParser.shared.parseFullConversation(
+            sessionId: session.sessionId,
+            sessionFile: sessionFile
+        )
+        let completedTools = await CodexConversationParser.shared.completedToolIds(for: session.sessionId)
+        let toolResults = await CodexConversationParser.shared.toolResults(for: session.sessionId)
+        let structuredResults = await CodexConversationParser.shared.structuredResults(for: session.sessionId)
+
+        applyHistory(
+            to: &updatedSession,
+            messages: messages,
+            completedTools: completedTools,
+            toolResults: toolResults,
+            structuredResults: structuredResults
+        )
+        return updatedSession
+    }
+
     private func processToolTracking(event: HookEvent, session: inout SessionState) {
         switch event.event {
-        case "PreToolUse":
+        case "PreToolUse", "PermissionRequest":
             if let toolUseId = event.toolUseId, let toolName = event.tool {
-                session.toolTracker.startTool(id: toolUseId, name: toolName)
+                if event.event == "PreToolUse" {
+                    session.toolTracker.startTool(id: toolUseId, name: toolName)
+                }
 
                 // Skip creating top-level placeholder for subagent tools
                 // They'll appear under their parent Task instead
@@ -315,25 +341,12 @@ actor SessionStore {
 
                 let toolExists = session.chatItems.contains { $0.id == toolUseId }
                 if !toolExists {
-                    var input: [String: String] = [:]
-                    if let hookInput = event.toolInput {
-                        for (key, value) in hookInput {
-                            if let str = value.value as? String {
-                                input[key] = str
-                            } else if let num = value.value as? Int {
-                                input[key] = String(num)
-                            } else if let bool = value.value as? Bool {
-                                input[key] = bool ? "true" : "false"
-                            }
-                        }
-                    }
-
                     let placeholderItem = ChatHistoryItem(
                         id: toolUseId,
                         type: .toolCall(ToolCallItem(
                             name: toolName,
-                            input: input,
-                            status: .running,
+                            input: toolInputStrings(from: event.toolInput),
+                            status: event.event == "PermissionRequest" ? .waitingForApproval : .running,
                             result: nil,
                             structuredResult: nil,
                             subagentTools: []
@@ -342,6 +355,8 @@ actor SessionStore {
                     )
                     session.chatItems.append(placeholderItem)
                     Self.logger.debug("Created placeholder tool entry for \(toolUseId.prefix(16), privacy: .public)")
+                } else if event.event == "PermissionRequest" {
+                    updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
                 }
             }
 
@@ -368,6 +383,22 @@ actor SessionStore {
         default:
             break
         }
+    }
+
+    private nonisolated func toolInputStrings(from hookInput: [String: AnyCodable]?) -> [String: String] {
+        guard let hookInput else { return [:] }
+
+        var input: [String: String] = [:]
+        for (key, value) in hookInput {
+            if let str = value.value as? String {
+                input[key] = str
+            } else if let num = value.value as? Int {
+                input[key] = String(num)
+            } else if let bool = value.value as? Bool {
+                input[key] = bool ? "true" : "false"
+            }
+        }
+        return input
     }
 
     private func processSubagentTracking(event: HookEvent, session: inout SessionState) {
@@ -1106,7 +1137,24 @@ actor SessionStore {
         // Update conversationInfo (summary, lastMessage, etc.)
         session.conversationInfo = conversationInfo
 
-        // Convert messages to chat items
+        applyHistory(
+            to: &session,
+            messages: messages,
+            completedTools: completedTools,
+            toolResults: toolResults,
+            structuredResults: structuredResults
+        )
+
+        sessions[sessionId] = session
+    }
+
+    private func applyHistory(
+        to session: inout SessionState,
+        messages: [ChatMessage],
+        completedTools: Set<String>,
+        toolResults: [String: ConversationParser.ToolResult],
+        structuredResults: [String: ToolResultData]
+    ) {
         let existingIds = Set(session.chatItems.map { $0.id })
 
         for message in messages {
@@ -1130,8 +1178,6 @@ actor SessionStore {
 
         // Sort by timestamp
         session.chatItems.sort { $0.timestamp < $1.timestamp }
-
-        sessions[sessionId] = session
     }
 
     // MARK: - File Sync Scheduling

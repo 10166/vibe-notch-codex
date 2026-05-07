@@ -22,6 +22,7 @@ private let codexWatcherLogger = Logger(subsystem: "com.claudeisland", category:
 actor CodexSessionScanner {
     private let activeWindowSeconds: TimeInterval = 30 * 60
     private let processingWindowSeconds: TimeInterval = 12
+    private let maxSnapshots = 25
 
     func scanRecentSessions() -> [CodexSessionSnapshot] {
         let fm = FileManager.default
@@ -56,7 +57,7 @@ actor CodexSessionScanner {
             ))
         }
 
-        return snapshots.sorted { $0.updatedAt > $1.updatedAt }
+        return Array(snapshots.sorted { $0.updatedAt > $1.updatedAt }.prefix(maxSnapshots))
     }
 
     private struct SessionMeta {

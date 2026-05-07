@@ -145,6 +145,10 @@ struct InstanceRow: View {
         return toolName == "AskUserQuestion"
     }
 
+    private var requiresNativeApproval: Bool {
+        session.agentKind == .codex || isInteractiveTool
+    }
+
     /// Status text based on session phase (fallback when no other content)
     private var phaseStatusText: String {
         switch session.phase {
@@ -203,7 +207,12 @@ struct InstanceRow: View {
                         Text(MCPToolFormatter.formatToolName(toolName))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundColor(TerminalColors.amber.opacity(0.9))
-                        if isInteractiveTool {
+                        if session.agentKind == .codex {
+                            Text("Approve in Codex")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                                .lineLimit(1)
+                        } else if isInteractiveTool {
                             Text("Needs your input")
                                 .font(.system(size: 11))
                                 .foregroundColor(.white.opacity(0.5))
@@ -271,8 +280,8 @@ struct InstanceRow: View {
             Spacer(minLength: 0)
 
             // Action icons or approval buttons
-            if isWaitingForApproval && isInteractiveTool {
-                // Interactive tools like AskUserQuestion - show chat + terminal buttons
+            if isWaitingForApproval && requiresNativeApproval {
+                // Codex approvals stay in Codex; interactive tools need chat/terminal focus.
                 HStack(spacing: 8) {
                     IconButton(icon: "bubble.left") {
                         onChat()
