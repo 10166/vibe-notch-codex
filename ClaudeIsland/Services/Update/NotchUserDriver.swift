@@ -5,9 +5,32 @@
 //  Custom Sparkle user driver for in-notch update UI
 //
 
+import AppKit
 import Combine
 import Foundation
 import Sparkle
+
+private struct GitHubRelease: Decodable {
+    let tagName: String
+    let body: String?
+    let assets: [GitHubReleaseAsset]
+
+    enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name"
+        case body
+        case assets
+    }
+}
+
+private struct GitHubReleaseAsset: Decodable {
+    let name: String
+    let browserDownloadURL: URL
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
+    }
+}
 
 /// Update state published to UI
 enum UpdateState: Equatable {
@@ -43,6 +66,8 @@ class UpdateManager: NSObject, ObservableObject {
     private var downloadedBytes: Int64 = 0
     private var expectedBytes: Int64 = 0
     private var currentVersion: String = ""
+    private var manualDownloadURL: URL?
+    private var fallbackTask: Task<Void, Never>?
 
     // Callbacks from Sparkle
     private var installHandler: ((SPUUserUpdateChoice) -> Void)?
@@ -56,14 +81,24 @@ class UpdateManager: NSObject, ObservableObject {
 
     func checkForUpdates() {
         state = .checking
-        if let updater = AppDelegate.shared?.updater {
-            updater.checkForUpdates()
-        } else {
-            state = .error(message: "Updater not initialized")
+        manualDownloadURL = nil
+        fallbackTask?.cancel()
+
+        guard let updater = AppDelegate.shared?.updater, updater.canCheckForUpdates else {
+            checkGitHubReleaseFallback(sparkleError: "Updater not initialized")
+            return
         }
+
+        updater.checkForUpdates()
     }
 
     func downloadAndInstall() {
+        if let manualDownloadURL {
+            NSWorkspace.shared.open(manualDownloadURL)
+            state = .idle
+            return
+        }
+
         installHandler?(.install)
     }
 
@@ -91,6 +126,7 @@ class UpdateManager: NSObject, ObservableObject {
     func updateFound(version: String, releaseNotes: String?, installHandler: @escaping (SPUUserUpdateChoice) -> Void) {
         self.currentVersion = version
         self.installHandler = installHandler
+        self.manualDownloadURL = nil
         self.state = .found(version: version, releaseNotes: releaseNotes)
         // Only show the dot if user hasn't seen it this session
         if !hasSeenUpdateThisSession {
@@ -142,6 +178,7 @@ class UpdateManager: NSObject, ObservableObject {
     }
 
     func noUpdateFound() {
+        self.manualDownloadURL = nil
         self.state = .upToDate
         // Reset to idle after a few seconds
         Task {
@@ -153,7 +190,7 @@ class UpdateManager: NSObject, ObservableObject {
     }
 
     func updateError(_ message: String) {
-        self.state = .error(message: message)
+        checkGitHubReleaseFallback(sparkleError: message)
     }
 
     func dismiss() {
@@ -164,6 +201,95 @@ class UpdateManager: NSObject, ObservableObject {
         self.state = .idle
         self.installHandler = nil
         self.cancellationHandler = nil
+        self.manualDownloadURL = nil
+        self.fallbackTask?.cancel()
+        self.fallbackTask = nil
+    }
+
+    private func checkGitHubReleaseFallback(sparkleError: String) {
+        fallbackTask?.cancel()
+        fallbackTask = Task {
+            do {
+                let release = try await Self.fetchLatestGitHubRelease()
+                guard !Task.isCancelled else { return }
+                applyGitHubFallback(release, sparkleError: sparkleError)
+            } catch {
+                guard !Task.isCancelled else { return }
+                state = .error(message: sparkleError.isEmpty ? error.localizedDescription : sparkleError)
+            }
+        }
+    }
+
+    private func applyGitHubFallback(_ release: GitHubRelease, sparkleError: String) {
+        let latestVersion = Self.normalizedVersion(release.tagName)
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+
+        guard Self.isVersion(latestVersion, newerThan: currentVersion) else {
+            noUpdateFound()
+            return
+        }
+
+        guard let dmgAsset = release.assets.first(where: { asset in
+            let lowercasedName = asset.name.lowercased()
+            return lowercasedName.hasSuffix(".dmg")
+        }) else {
+            state = .error(message: sparkleError.isEmpty ? "No downloadable update found" : sparkleError)
+            return
+        }
+
+        self.currentVersion = latestVersion
+        self.installHandler = nil
+        self.manualDownloadURL = dmgAsset.browserDownloadURL
+        self.state = .found(version: latestVersion, releaseNotes: release.body)
+
+        if !hasSeenUpdateThisSession {
+            self.hasUnseenUpdate = true
+        }
+    }
+
+    private static func fetchLatestGitHubRelease() async throws -> GitHubRelease {
+        let url = URL(string: "https://api.github.com/repos/10166/vibe-notch-codex/releases/latest")!
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("Vibe-Notch", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(GitHubRelease.self, from: data)
+    }
+
+    nonisolated private static func isVersion(_ candidate: String, newerThan current: String) -> Bool {
+        let candidateParts = numericVersionParts(candidate)
+        let currentParts = numericVersionParts(current)
+        let maxCount = max(candidateParts.count, currentParts.count)
+
+        for index in 0..<maxCount {
+            let candidatePart = index < candidateParts.count ? candidateParts[index] : 0
+            let currentPart = index < currentParts.count ? currentParts[index] : 0
+
+            if candidatePart != currentPart {
+                return candidatePart > currentPart
+            }
+        }
+
+        return false
+    }
+
+    nonisolated private static func numericVersionParts(_ version: String) -> [Int] {
+        normalizedVersion(version)
+            .split(separator: ".")
+            .map { part in
+                let digits = part.prefix { $0.isNumber }
+                return Int(digits) ?? 0
+            }
+    }
+
+    nonisolated private static func normalizedVersion(_ version: String) -> String {
+        version.hasPrefix("v") ? String(version.dropFirst()) : version
     }
 }
 
