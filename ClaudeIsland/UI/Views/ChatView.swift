@@ -144,20 +144,7 @@ struct ChatView: View {
             }
         }
         .onReceive(sessionMonitor.$instances) { sessions in
-            if let updated = sessions.first(where: { $0.sessionId == sessionId }),
-               updated != session {
-                // Check if permission was just accepted (transition from waitingForApproval to processing)
-                let wasWaiting = isWaitingForApproval
-                session = updated
-                let isNowProcessing = updated.phase == .processing
-
-                if wasWaiting && isNowProcessing {
-                    // Scroll to bottom after permission accepted (with slight delay)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        shouldScrollToBottom = true
-                    }
-                }
-            }
+            syncSessionFromMonitor(sessions)
         }
         .onChange(of: canSendMessages) { _, canSend in
             // Auto-focus input when tmux messaging becomes available
@@ -168,11 +155,35 @@ struct ChatView: View {
             }
         }
         .onAppear {
+            syncSessionFromMonitor(sessionMonitor.instances)
+
             // Auto-focus input when chat opens and tmux messaging is available
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 if canSendMessages {
                     isInputFocused = true
                 }
+            }
+        }
+    }
+
+    private func syncSessionFromMonitor(_ sessions: [SessionState]) {
+        guard let updated = sessions.first(where: { $0.sessionId == sessionId }) else {
+            return
+        }
+        applySessionUpdate(updated)
+    }
+
+    private func applySessionUpdate(_ updated: SessionState) {
+        guard updated != session else { return }
+
+        // Check if permission was just accepted (transition from waitingForApproval to processing)
+        let wasWaiting = isWaitingForApproval
+        session = updated
+
+        if wasWaiting && updated.phase == .processing {
+            // Scroll to bottom after permission accepted (with slight delay)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                shouldScrollToBottom = true
             }
         }
     }

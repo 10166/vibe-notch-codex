@@ -253,6 +253,7 @@ struct NotchView: View {
             handlePendingSessionsChange(sessions)
         }
         .onChange(of: sessionMonitor.instances) { _, instances in
+            viewModel.syncCurrentChatSession(from: instances)
             handleProcessingChange()
             handleWaitingForInputChange(instances)
         }

@@ -265,6 +265,9 @@ class NotchViewModel: ObservableObject {
         if let chatSession = currentChatSession {
             // Avoid unnecessary updates if already showing this chat
             if case .chat(let current) = contentType, current.sessionId == chatSession.sessionId {
+                if current != chatSession {
+                    contentType = .chat(chatSession)
+                }
                 return
             }
             contentType = .chat(chatSession)
@@ -309,11 +312,29 @@ class NotchViewModel: ObservableObject {
     }
 
     func showChat(for session: SessionState) {
-        // Avoid unnecessary updates if already showing this chat
+        currentChatSession = session
+
+        // Keep the visible chat snapshot current when the session phase changes.
         if case .chat(let current) = contentType, current.sessionId == session.sessionId {
+            if current != session {
+                contentType = .chat(session)
+            }
             return
         }
         contentType = .chat(session)
+    }
+
+    func syncCurrentChatSession(from sessions: [SessionState]) {
+        if let current = currentChatSession,
+           let updated = sessions.first(where: { $0.sessionId == current.sessionId }) {
+            currentChatSession = updated
+        }
+
+        if case .chat(let current) = contentType,
+           let updated = sessions.first(where: { $0.sessionId == current.sessionId }),
+           updated != current {
+            contentType = .chat(updated)
+        }
     }
 
     /// Go back to instances list and clear saved chat state
