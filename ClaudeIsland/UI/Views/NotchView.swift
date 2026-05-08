@@ -14,6 +14,7 @@ private let cornerRadiusInsets = (
     opened: (top: CGFloat(19), bottom: CGFloat(24)),
     closed: (top: CGFloat(6), bottom: CGFloat(14))
 )
+private let waitingForInputDisplayDuration: TimeInterval = 30
 
 struct NotchView: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -42,13 +43,12 @@ struct NotchView: View {
     /// Whether any Claude session is waiting for user input (done/ready state) within the display window
     private var hasWaitingForInput: Bool {
         let now = Date()
-        let displayDuration: TimeInterval = 30  // Show checkmark for 30 seconds
 
         return sessionMonitor.instances.contains { session in
             guard session.phase == .waitingForInput else { return false }
             // Only show if within the 30-second display window
             if let enteredAt = waitingForInputTimestamps[session.stableId] {
-                return now.timeIntervalSince(enteredAt) < displayDuration
+                return now.timeIntervalSince(enteredAt) < waitingForInputDisplayDuration
             }
             return false
         }
@@ -254,8 +254,8 @@ struct NotchView: View {
         }
         .onChange(of: sessionMonitor.instances) { _, instances in
             viewModel.syncCurrentChatSession(from: instances)
-            handleProcessingChange()
             handleWaitingForInputChange(instances)
+            handleProcessingChange()
         }
     }
 
@@ -514,15 +514,19 @@ struct NotchView: View {
     }
 
     private func handleWaitingForInputChange(_ instances: [SessionState]) {
+        let now = Date()
+
         // Get sessions that are now waiting for input
-        let waitingForInputSessions = instances.filter { $0.phase == .waitingForInput }
+        let waitingForInputSessions = instances.filter { session in
+            session.phase == .waitingForInput &&
+                now.timeIntervalSince(session.lastActivity) < waitingForInputDisplayDuration
+        }
         let currentIds = Set(waitingForInputSessions.map { $0.stableId })
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
 
         // Track timestamps for newly waiting sessions
-        let now = Date()
         for session in waitingForInputSessions where newWaitingIds.contains(session.stableId) {
-            waitingForInputTimestamps[session.stableId] = now
+            waitingForInputTimestamps[session.stableId] = session.lastActivity
         }
 
         // Clean up timestamps for sessions no longer waiting

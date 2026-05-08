@@ -36,6 +36,10 @@ actor SessionStore {
     /// Status check interval (3 seconds)
     private let statusCheckIntervalSeconds: UInt64 = 3
 
+    /// Codex sometimes leaves a JSONL with task_started but no task_complete
+    /// if the CLI exits unexpectedly. Treat an unchanged running turn as stale.
+    nonisolated private static let codexRunningStaleSeconds: TimeInterval = 90
+
     // MARK: - Published State (for UI)
 
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
@@ -298,7 +302,8 @@ actor SessionStore {
         case .complete:
             return .waitingForInput
         case .running:
-            return .processing
+            let age = Date().timeIntervalSince(snapshot.updatedAt)
+            return age <= Self.codexRunningStaleSeconds ? .processing : .waitingForInput
         case .unknown:
             return snapshot.isProcessing ? .processing : .waitingForInput
         }
