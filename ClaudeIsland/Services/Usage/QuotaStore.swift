@@ -16,21 +16,16 @@ final class QuotaStore: ObservableObject {
     @Published private(set) var isRefreshing = false
 
     private var refreshTask: Task<Void, Never>?
-    private var periodicTask: Task<Void, Never>?
 
-    private static let refreshInterval: UInt64 = 10 * 60 * 1_000_000_000
+    private static let refreshInterval: TimeInterval = 10 * 60
 
     private init() {}
 
     func start() {
-        guard periodicTask == nil else { return }
+        guard snapshot.lastUpdatedAt == nil
+            || Date().timeIntervalSince(snapshot.lastUpdatedAt!) >= Self.refreshInterval
+        else { return }
         refresh()
-        periodicTask = Task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.refreshInterval)
-                refresh()
-            }
-        }
     }
 
     func refresh() {
