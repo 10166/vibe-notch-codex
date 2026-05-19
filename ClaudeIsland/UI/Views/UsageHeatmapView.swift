@@ -19,6 +19,7 @@ struct UsageHeatmapView: View {
     @State private var hoveredBarDay: ModelBarHover?
     @State private var hoveredModelName: String?
     @State private var chartMode: UsageChartMode = .heatmap
+    @State private var showCopiedFeedback = false
 
     private let maxCellSize: CGFloat = 11
     private let minCellSize: CGFloat = 5
@@ -107,6 +108,35 @@ struct UsageHeatmapView: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.plain)
+
+            Button {
+                let presentation = makePresentation()
+                if UsageShareImageGenerator.generateAndCopy(
+                    presentation: presentation,
+                    metric: metric,
+                    agentFilter: agentFilter,
+                    range: range,
+                    chartMode: chartMode
+                ) {
+                    showCopiedFeedback = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        showCopiedFeedback = false
+                    }
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.45))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+
+            if showCopiedFeedback {
+                Text("Copied!")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(TerminalColors.green.opacity(0.8))
+            }
         }
     }
 
@@ -825,7 +855,7 @@ struct UsageHeatmapView: View {
     }
 }
 
-private struct UsageHeatmapPresentation {
+struct UsageHeatmapPresentation {
     let selectedDateKey: String
     let totalTokens: Int64
     let totalCostMicros: Int64?
@@ -841,7 +871,7 @@ private struct UsageHeatmapPresentation {
     let dailyModelData: [ModelDailyEntry]
 }
 
-private struct UsageBreakdownItem: Identifiable {
+struct UsageBreakdownItem: Identifiable {
     let id: String
     let agent: UsageAnalyticsAgent
     let projectName: String
@@ -879,7 +909,7 @@ private struct UsageBreakdownItem: Identifiable {
     }
 }
 
-private struct UsageHeatmapMonthLabel: Identifiable {
+struct UsageHeatmapMonthLabel: Identifiable {
     let weekIndex: Int
     let title: String
 
@@ -1157,7 +1187,7 @@ private enum UsageDetailFormatters {
     }
 }
 
-private struct ModelUsageEntry: Identifiable {
+struct ModelUsageEntry: Identifiable {
     let modelName: String
     let displayName: String
     let value: Double
@@ -1167,7 +1197,7 @@ private struct ModelUsageEntry: Identifiable {
     var id: String { modelName }
 }
 
-private struct ModelDailyEntry {
+struct ModelDailyEntry {
     let localDate: String
     let date: Date
     let modelValues: [String: Double]
@@ -1179,7 +1209,7 @@ private struct ModelBarHover {
     let day: ModelDailyEntry
 }
 
-private enum ModelColorMap {
+enum ModelColorMap {
     static func color(for modelName: String) -> Color {
         let lower = modelName.lowercased()
 
@@ -1223,7 +1253,7 @@ private enum ModelColorMap {
     }
 }
 
-private enum UsageChartMode: String, CaseIterable, Identifiable {
+enum UsageChartMode: String, CaseIterable, Identifiable {
     case heatmap
     case stackedBar
     case barChart
