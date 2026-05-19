@@ -154,19 +154,29 @@ private struct UsageShareCard: View {
     @ViewBuilder
     private var stackedBarSection: some View {
         if presentation.modelTotalValue > 0, !presentation.modelEntries.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 1.5) {
-                    ForEach(presentation.modelEntries) { entry in
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(ModelColorMap.color(for: entry.modelName).opacity(0.9))
-                            .frame(width: max(2, chartWidth * CGFloat(entry.value / presentation.modelTotalValue)))
+            VStack(alignment: .leading, spacing: 8) {
+                Canvas { ctx, size in
+                    let entries = presentation.modelEntries
+                    let total = presentation.modelTotalValue
+                    let w = size.width
+                    let gapCount = max(entries.count - 1, 0)
+                    let totalGap = CGFloat(gapCount) * 1.5
+                    let usable = w - totalGap
+                    var x: CGFloat = 0
+                    for entry in entries {
+                        let segW = max(2, usable * CGFloat(entry.value / total))
+                        let rect = CGRect(x: x, y: 0, width: segW, height: size.height)
+                        ctx.fill(
+                            Path(roundedRect: rect, cornerRadius: 4),
+                            with: .color(ModelColorMap.color(for: entry.modelName).opacity(0.9))
+                        )
+                        x += segW + 1.5
                     }
                 }
-                .frame(height: 24)
+                .frame(width: chartWidth, height: 60)
 
                 legendRow(presentation.modelEntries)
             }
-            .frame(width: chartWidth)
         }
     }
 
